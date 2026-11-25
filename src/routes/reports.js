@@ -6,10 +6,11 @@
 
 'use strict';
 
+const fs = require('node:fs');
 const { requireAuth, getCurrentUser } = require('../middleware/auth.js');
 const { parseMultipart, readJsonBody } = require('../middleware/upload.js');
 const { generateUUID, generateReportNumber, sanitizeInput, validateCategory, validateStatus,
-        ALLOWED_CATEGORIES, ALLOWED_STATUSES } = require('../utils/helpers.js');
+        extractExifGps, ALLOWED_CATEGORIES, ALLOWED_STATUSES } = require('../utils/helpers.js');
 const { classifyReport, getDuplicateSuggestions } = require('../services/classifier.js');
 const { calculateDeadline } = require('../services/sla.js');
 const { createNotification, notifyReportUpdate } = require('../services/notifications.js');
@@ -36,9 +37,23 @@ function reportRoutes(db) {
         const description = sanitizeInput(fields.description || '');
         const category = fields.category;
         const isAnonymous = fields.is_anonymous === '1' || fields.is_anonymous === 'true' ? 1 : 0;
-        const latitude = fields.latitude ? parseFloat(fields.latitude) : null;
-        const longitude = fields.longitude ? parseFloat(fields.longitude) : null;
+        let latitude = fields.latitude ? parseFloat(fields.latitude) : null;
+        let longitude = fields.longitude ? parseFloat(fields.longitude) : null;
         const address = sanitizeInput(fields.address || '');
+
+        // If user uploaded a geo-tagged JPEG without manual/GPS coordinates, extract EXIF GPS
+        if (file && file.mimeType === 'image/jpeg' && (latitude === null || longitude === null)) {
+          try {
+            const imgBuf = fs.readFileSync(file.path);
+            const exifGps = extractExifGps(imgBuf);
+            if (exifGps) {
+              latitude = exifGps.latitude;
+              longitude = exifGps.longitude;
+            }
+          } catch {
+            // Ignore EXIF read errors
+          }
+        }
 
         if (!description || description.length < 20) {
           res.writeHead(400, { 'Content-Type': 'application/json' });

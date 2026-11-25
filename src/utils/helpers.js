@@ -301,6 +301,97 @@ function clamp(val, min, max) {
   return Math.min(Math.max(val, min), max);
 }
 
+/**
+ * Extract GPS latitude/longitude from a JPEG EXIF APP1 buffer (zero dependencies).
+ * Returns null if no EXIF GPS data is present or the buffer is not a valid JPEG.
+ * @param {Buffer} buffer
+ * @returns {{ latitude: number, longitude: number } | null}
+ */
+function extractExifGps(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 12) return null;
+  if (buffer[0] !== 0xFF || buffer[1] !== 0xD8) return null; // Not JPEG
+
+  let offset = 2;
+  while (offset + 4 < buffer.length) {
+    if (buffer[offset] !== 0xFF) break;
+    const marker = buffer[offset + 1];
+    if (marker === 0xDA || marker === 0xD9) break; // SOS or EOI
+    const segLen = buffer.readUInt16BE(offset + 2);
+    if (marker === 0xE1 && segLen >= 8 && buffer.toString('ascii', offset + 4, offset + 10) === 'Exif\0\0') {
+      const tiffStart = offset + 10;
+      if (tiffStart + 8 > buffer.length) return null;
+      const byteOrder = buffer.toString('ascii', tiffStart, tiffStart + 2);
+      const le = byteOrder === 'II';
+      if (!le && byteOrder !== 'MM') return null;
+
+      const u16 = (p) => (p + 2 <= buffer.length ? (le ? buffer.readUInt16LE(p) : buffer.readUInt16BE(p)) : 0);
+      const u32 = (p) => (p + 4 <= buffer.length ? (le ? buffer.readUInt32LE(p) : buffer.readUInt32BE(p)) : 0);
+      const readRational = (p) => {
+        if (p + 8 > buffer.length) return 0;
+        const num = u32(p);
+        const den = u32(p + 4);
+        return den ? num / den : 0;
+      };
+
+      const ifd0Offset = u32(tiffStart + 4);
+      const ifd0Start = tiffStart + ifd0Offset;
+      const entries = u16(ifd0Start);
+      let gpsIfdOffset = null;
+      for (let i = 0; i < entries; i++) {
+        const entryPos = ifd0Start + 2 + i * 12;
+        if (entryPos + 12 > buffer.length) break;
+        if (u16(entryPos) === 0x8825) { // GPSInfoIFDPointer
+          gpsIfdOffset = u32(entryPos + 8);
+          break;
+        }
+      }
+      if (gpsIfdOffset == null) return null;
+
+      const gpsStart = tiffStart + gpsIfdOffset;
+      const gpsEntries = u16(gpsStart);
+      let latRef = 'N';
+      let lngRef = 'E';
+      let latVals = null;
+      let lngVals = null;
+
+      for (let i = 0; i < gpsEntries; i++) {
+        const entryPos = gpsStart + 2 + i * 12;
+        if (entryPos + 12 > buffer.length) break;
+        const tag = u16(entryPos);
+        const count = u32(entryPos + 4);
+        const valOffset = tiffStart + u32(entryPos + 8);
+
+        if (tag === 1) { // GPSLatitudeRef
+          latRef = String.fromCharCode(buffer[entryPos + 8] || 78);
+        } else if (tag === 3) { // GPSLongitudeRef
+          lngRef = String.fromCharCode(buffer[entryPos + 8] || 69);
+        } else if (tag === 2 && count === 3) { // GPSLatitude
+          latVals = [readRational(valOffset), readRational(valOffset + 8), readRational(valOffset + 16)];
+        } else if (tag === 4 && count === 3) { // GPSLongitude
+          lngVals = [readRational(valOffset), readRational(valOffset + 8), readRational(valOffset + 16)];
+        }
+      }
+
+      if (latVals && lngVals) {
+        let lat = latVals[0] + latVals[1] / 60 + latVals[2] / 3600;
+        let lng = lngVals[0] + lngVals[1] / 60 + lngVals[2] / 3600;
+        if (latRef === 'S') lat = -lat;
+        if (lngRef === 'W') lng = -lng;
+        if (Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)) {
+          return {
+            latitude: Math.round(lat * 1e6) / 1e6,
+            longitude: Math.round(lng * 1e6) / 1e6
+          };
+        }
+      }
+      return null;
+    }
+    if (segLen < 2) break;
+    offset += 2 + segLen;
+  }
+  return null;
+}
+
 // ─── Exports ─────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -323,5 +414,6 @@ module.exports = {
   isValidImageType,
   escapeHtml,
   formatFileSize,
-  clamp
+  clamp,
+  extractExifGps
 };

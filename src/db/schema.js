@@ -249,6 +249,20 @@ function initDatabase(dbPath) {
     )
   `);
 
+  // ─── App Reviews & Resolution Ratings ────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_reviews (
+      id              TEXT PRIMARY KEY,
+      user_id         TEXT REFERENCES users(id),
+      report_id       TEXT REFERENCES reports(id),
+      rating          INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
+      issue_resolved  TEXT NOT NULL CHECK(issue_resolved IN ('yes','partially','no')),
+      title           TEXT,
+      comment         TEXT NOT NULL,
+      created_at      TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   // ─── Indexes ─────────────────────────────────────────────────────────────
   // Reports indexes for common query patterns
   db.exec(`CREATE INDEX IF NOT EXISTS idx_reports_user_id       ON reports(user_id)`);
@@ -270,6 +284,9 @@ function initDatabase(dbPath) {
 
   // Audit log entity lookups
   db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id)`);
+
+  // App reviews lookups
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_app_reviews_created_at ON app_reviews(created_at)`);
 
   return db;
 }

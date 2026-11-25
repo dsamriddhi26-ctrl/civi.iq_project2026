@@ -76,7 +76,8 @@
       priority: '',
       sort: 'newest',
       page: 1,
-      showMap: false
+      showMap: false,
+      mapMode: 'pins'
     },
     staffFilters: {
       search: '',
@@ -293,6 +294,207 @@
     return map;
   }
 
+  /**
+   * Render a zero-dependency Leaflet canvas thermal heatmap.
+   * Points: [{ lat, lng, weight }] where weight is ~0.4..1.5
+   */
+  function renderHeatmap(containerId, points = [], options = {}) {
+    const el = document.getElementById(containerId);
+    if (!el) return null;
+
+    if (typeof L === 'undefined') {
+      el.innerHTML = '<div class="empty-state"><p>Map library unavailable offline.</p></div>';
+      return null;
+    }
+
+    const validPoints = points.filter(p => p.lat != null && p.lng != null);
+    const centerLat = options.lat ?? validPoints[0]?.lat ?? DEFAULT_COORDS.lat;
+    const centerLng = options.lng ?? validPoints[0]?.lng ?? DEFAULT_COORDS.lng;
+    const zoom = options.zoom || 11;
+
+    const map = L.map(containerId).setView([Number(centerLat), Number(centerLng)], zoom);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19
+    }).addTo(map);
+
+    const HeatCanvasLayer = L.Layer.extend({
+      onAdd(m) {
+        this._map = m;
+        const pane = m.getPane('overlayPane');
+        this._canvas = L.DomUtil.create('canvas', 'leaflet-heatmap-layer');
+        this._canvas.style.position = 'absolute';
+        this._canvas.style.pointerEvents = 'none';
+        pane.appendChild(this._canvas);
+        m.on('moveend zoomend resize', this._redraw, this);
+        this._redraw();
+      },
+      onRemove(m) {
+        m.off('moveend zoomend resize', this._redraw, this);
+        if (this._canvas && this._canvas.parentNode) {
+          this._canvas.parentNode.removeChild(this._canvas);
+        }
+      },
+      _redraw() {
+        const m = this._map;
+        const size = m.getSize();
+        const topLeft = m.containerPointToLayerPoint([0, 0]);
+        L.DomUtil.setPosition(this._canvas, topLeft);
+        this._canvas.width = size.x;
+        this._canvas.height = size.y;
+
+        const ctx = this._canvas.getContext('2d');
+        ctx.clearRect(0, 0, size.x, size.y);
+        if (validPoints.length === 0) return;
+
+        // Draw grayscale alpha intensity on offscreen canvas, then colorize
+        const off = document.createElement('canvas');
+        off.width = size.x;
+        off.height = size.y;
+        const octx = off.getContext('2d');
+
+        const radius = Math.max(24, Math.min(48, Math.round(size.x / 22)));
+        for (const pt of validPoints) {
+          const p = m.latLngToContainerPoint([Number(pt.lat), Number(pt.lng)]);
+          if (p.x < -radius || p.y < -radius || p.x > size.x + radius || p.y > size.y + radius) continue;
+          const weight = Math.min(1, Math.max(0.25, Number(pt.weight || 0.6)));
+          const grad = octx.createRadialGradient(p.x, p.y, 0, p.x, p.y, radius);
+          grad.addColorStop(0, `rgba(0,0,0,${(weight * 0.85).toFixed(2)})`);
+          grad.addColorStop(0.5, `rgba(0,0,0,${(weight * 0.4).toFixed(2)})`);
+          grad.addColorStop(1, 'rgba(0,0,0,0)');
+          octx.fillStyle = grad;
+          octx.beginPath();
+          octx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+          octx.fill();
+        }
+
+        const imgData = octx.getImageData(0, 0, size.x, size.y);
+        const data = imgData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const alpha = data[i + 3];
+          if (alpha === 0) continue;
+          const t = alpha / 255;
+          let r = 0, g = 0, b = 0;
+          if (t < 0.25) {
+            const k = t / 0.25;
+            r = 46; g = Math.round(134 + k * 80); b = 220;
+          } else if (t < 0.5) {
+            const k = (t - 0.25) / 0.25;
+            r = Math.round(46 + k * 190); g = 210; b = Math.round(220 - k * 170);
+          } else if (t < 0.75) {
+            const k = (t - 0.5) / 0.25;
+            r = 245; g = Math.round(210 - k * 100); b = 30;
+          } else {
+            const k = (t - 0.75) / 0.25;
+            r = 220; g = Math.round(110 - k * 85); b = 25;
+          }
+          data[i] = r;
+          data[i + 1] = g;
+          data[i + 2] = b;
+          data[i + 3] = Math.min(200, Math.round(alpha * 0.82));
+        }
+        ctx.putImageData(imgData, 0, 0);
+      }
+    });
+
+    new HeatCanvasLayer().addTo(map);
+
+    // Add interactive hover/click circle markers with low opacity for popups
+    validPoints.forEach(pt => {
+      if (pt.popup) {
+        L.circleMarker([Number(pt.lat), Number(pt.lng)], {
+          radius: 8,
+          color: 'transparent',
+          fillColor: '#000',
+          fillOpacity: 0.01
+        }).addTo(map).bindPopup(pt.popup);
+      }
+    });
+
+    state.activeMaps.push(map);
+    setTimeout(() => map.invalidateSize(), 100);
+    return map;
+  }
+
+  /**
+   * Read EXIF GPS coordinates from a JPEG File in the browser (zero dependencies).
+   */
+  async function extractBrowserExifGps(file) {
+    if (!file || file.type !== 'image/jpeg') return null;
+    try {
+      const buf = await file.slice(0, 131072).arrayBuffer();
+      const view = new DataView(buf);
+      if (view.byteLength < 12 || view.getUint16(0, false) !== 0xFFD8) return null;
+
+      let offset = 2;
+      while (offset + 4 < view.byteLength) {
+        if (view.getUint8(offset) !== 0xFF) break;
+        const marker = view.getUint8(offset + 1);
+        if (marker === 0xDA || marker === 0xD9) break;
+        const segLen = view.getUint16(offset + 2, false);
+        if (marker === 0xE1 && segLen >= 8) {
+          const exifHeader = String.fromCharCode(
+            view.getUint8(offset + 4), view.getUint8(offset + 5),
+            view.getUint8(offset + 6), view.getUint8(offset + 7)
+          );
+          if (exifHeader === 'Exif') {
+            const tiffStart = offset + 10;
+            if (tiffStart + 8 > view.byteLength) return null;
+            const order = view.getUint16(tiffStart, false);
+            const le = order === 0x4949;
+            if (!le && order !== 0x4D4D) return null;
+
+            const u16 = (p) => view.getUint16(p, le);
+            const u32 = (p) => view.getUint32(p, le);
+            const rat = (p) => {
+              const d = u32(p + 4);
+              return d ? u32(p) / d : 0;
+            };
+
+            const ifd0 = tiffStart + u32(tiffStart + 4);
+            const count = u16(ifd0);
+            let gpsOff = null;
+            for (let i = 0; i < count; i++) {
+              const ep = ifd0 + 2 + i * 12;
+              if (ep + 12 > view.byteLength) break;
+              if (u16(ep) === 0x8825) { gpsOff = u32(ep + 8); break; }
+            }
+            if (gpsOff == null) return null;
+
+            const gpsStart = tiffStart + gpsOff;
+            const gCount = u16(gpsStart);
+            let latRef = 'N', lngRef = 'E', latV = null, lngV = null;
+            for (let i = 0; i < gCount; i++) {
+              const ep = gpsStart + 2 + i * 12;
+              if (ep + 12 > view.byteLength) break;
+              const tag = u16(ep);
+              const valOff = tiffStart + u32(ep + 8);
+              if (tag === 1) latRef = String.fromCharCode(view.getUint8(ep + 8) || 78);
+              else if (tag === 3) lngRef = String.fromCharCode(view.getUint8(ep + 8) || 69);
+              else if (tag === 2 && u32(ep + 4) === 3) latV = [rat(valOff), rat(valOff + 8), rat(valOff + 16)];
+              else if (tag === 4 && u32(ep + 4) === 3) lngV = [rat(valOff), rat(valOff + 8), rat(valOff + 16)];
+            }
+            if (latV && lngV) {
+              let lat = latV[0] + latV[1] / 60 + latV[2] / 3600;
+              let lng = lngV[0] + lngV[1] / 60 + lngV[2] / 3600;
+              if (latRef === 'S') lat = -lat;
+              if (lngRef === 'W') lng = -lng;
+              if (Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)) {
+                return { latitude: Math.round(lat * 1e6) / 1e6, longitude: Math.round(lng * 1e6) / 1e6 };
+              }
+            }
+            return null;
+          }
+        }
+        if (segLen < 2) break;
+        offset += 2 + segLen;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
   // ─── Authentication & Header UI ────────────────────────────────────────────
 
   async function initAuth() {
@@ -388,7 +590,8 @@
       { href: '#/report/new', label: 'Report Issue' },
       ...(state.user ? [{ href: '#/my-reports', label: 'My Reports' }] : []),
       { href: '#/community', label: 'Community' },
-      { href: '#/leaderboard', label: 'Leaderboard' }
+      { href: '#/leaderboard', label: 'Leaderboard' },
+      { href: '#/reviews', label: 'Reviews' }
     ];
 
     if (role === 'staff' || role === 'admin') {
@@ -510,6 +713,8 @@
         await renderCommunityFeedPage(app);
       } else if (path === '/leaderboard') {
         await renderLeaderboardPage(app);
+      } else if (path === '/reviews') {
+        await renderReviewsPage(app);
       } else if (path === '/staff/dashboard') {
         await renderStaffDashboardPage(app);
       } else if (path === '/staff/reports') {
@@ -887,12 +1092,14 @@
 
           <div class="card mb-md">
             <div class="card-header flex justify-between items-center">
-              <strong>Location</strong>
+              <strong>Location ${d.latitude != null ? '<span class="badge badge-info">📍 Geo-tagged</span>' : ''}</strong>
               <button type="button" class="btn btn-ghost btn-sm" id="edit-step2-btn">Edit</button>
             </div>
             <div class="card-body">
               <p><strong>Coordinates:</strong> ${d.latitude != null ? `${Number(d.latitude).toFixed(5)}, ${Number(d.longitude).toFixed(5)}` : 'Not provided'}</p>
               <p><strong>Address / Landmark:</strong> ${esc(d.address || 'Not provided')}</p>
+              ${d.geoSource === 'photo_exif' ? '<p class="text-xs text-muted mt-sm">Extracted automatically from uploaded photo EXIF GPS metadata.</p>' : ''}
+              ${d.latitude != null && d.longitude != null ? '<div class="map-container-sm mt-sm" id="review-step-map"></div>' : ''}
             </div>
           </div>
 
@@ -925,6 +1132,14 @@
       renderReportNewPage(app);
     });
 
+    if (d.latitude != null && d.longitude != null) {
+      renderMap('review-step-map', d.latitude, d.longitude, [{
+        lat: d.latitude,
+        lng: d.longitude,
+        popup: esc(d.address || 'Pinned issue location')
+      }], { zoom: 15 });
+    }
+
     // Fetch rules-based classification + duplicate suggestions
     try {
       const clsUrl = `/api/reports/classify?description=${encodeURIComponent(d.description)}&category=${encodeURIComponent(d.category)}`;
@@ -938,7 +1153,9 @@
             <p><strong>Suggested Category:</strong> ${esc(catLabel(cls.category))}</p>
             <p><strong>Suggested Priority:</strong> ${priorityBadge(cls.priority)}</p>
             <p><strong>Suggested Department:</strong> ${esc(cls.department || 'General Services')}</p>
-            ${cls.note ? `<p class="text-xs text-muted mt-sm">${esc(cls.note)}</p>` : ''}
+            ${cls.note && (Array.isArray(cls.note) ? cls.note.length > 0 : true)
+              ? `<p class="text-xs text-muted mt-sm">${esc(Array.isArray(cls.note) ? cls.note.join(' ') : cls.note)}</p>`
+              : ''}
           </div>
         `;
       }
@@ -1028,6 +1245,14 @@
       if (errEl) errEl.hidden = true;
 
       draft.file = file;
+      extractBrowserExifGps(file).then((gps) => {
+        if (gps) {
+          draft.latitude = gps.latitude;
+          draft.longitude = gps.longitude;
+          draft.geoSource = 'photo_exif';
+          showToast(`Photo geo-tag detected (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)}) — location pre-filled!`, 'success');
+        }
+      });
       const reader = new FileReader();
       reader.onload = (ev) => {
         draft.previewSrc = ev.target.result;
@@ -1115,7 +1340,13 @@
             <div>
               <div class="detail-row"><span class="detail-label">Department</span><span class="detail-value">${esc(r.departmentName || 'General Services')}</span></div>
               <div class="detail-row"><span class="detail-label">Address</span><span class="detail-value">${esc(r.address || '—')}</span></div>
+              <div class="detail-row"><span class="detail-label">Geo-tag</span><span class="detail-value">${r.latitude != null && r.longitude != null ? `📍 ${Number(r.latitude).toFixed(5)}, ${Number(r.longitude).toFixed(5)}` : 'Not geo-tagged'}</span></div>
               <div class="detail-row"><span class="detail-label">Last Updated</span><span class="detail-value">${formatDate(r.updatedAt)}</span></div>
+              ${['resolved', 'closed'].includes(r.status) ? `
+                <div class="mt-md">
+                  <a href="#/reviews?reportId=${esc(r.id)}" class="btn btn-primary btn-sm">⭐ Rate Resolution &amp; App</a>
+                </div>
+              ` : ''}
             </div>
             <div>
               ${r.imagePath ? `<img src="${esc(r.imagePath)}" alt="Report evidence" class="image-preview-lg">` : '<p class="text-muted text-sm">No image attached.</p>'}
@@ -1282,9 +1513,12 @@
           <h1>Community Reports</h1>
           <p class="text-sm text-muted">${pag.total} total reports</p>
         </div>
-        <div class="flex gap-sm">
-          <button type="button" class="btn btn-secondary" id="toggle-community-map">
-            ${f.showMap ? 'Hide Map' : '🗺️ Show Map'}
+        <div class="flex gap-sm flex-wrap">
+          <button type="button" class="btn ${f.showMap && f.mapMode === 'pins' ? 'btn-primary' : 'btn-secondary'}" id="toggle-community-pins">
+            ${f.showMap && f.mapMode === 'pins' ? 'Hide Pin Map' : '🗺️ Pin Map'}
+          </button>
+          <button type="button" class="btn ${f.showMap && f.mapMode === 'heatmap' ? 'btn-primary' : 'btn-secondary'}" id="toggle-community-heatmap">
+            ${f.showMap && f.mapMode === 'heatmap' ? 'Hide Heatmap' : '🔥 Issue Heatmap'}
           </button>
           <a href="#/report/new" class="btn btn-primary">+ Report Issue</a>
         </div>
@@ -1292,7 +1526,23 @@
 
       ${C.FilterBar ? C.FilterBar(filterDefs, f) : ''}
 
-      ${f.showMap ? '<div class="map-container mb-lg" id="community-map"></div>' : ''}
+      ${f.showMap ? `
+        <div class="card mb-lg">
+          <div class="card-header flex justify-between items-center flex-wrap gap-sm">
+            <strong>${f.mapMode === 'heatmap' ? '🔥 Civic Issue Density Heatmap' : '🗺️ Geo-tagged Issue Map'}</strong>
+            ${f.mapMode === 'heatmap' ? `
+              <div class="heatmap-legend">
+                <span>Low</span>
+                <span class="heatmap-gradient"></span>
+                <span>High / Critical</span>
+              </div>
+            ` : ''}
+          </div>
+          <div class="card-body">
+            <div class="map-container" id="community-map"></div>
+          </div>
+        </div>
+      ` : ''}
 
       <div id="community-list" class="grid grid-2">
         ${reports.length === 0 ? `
@@ -1321,21 +1571,50 @@
 
     if (f.showMap) {
       try {
-        const mapData = await fetchAPI('/api/community/map-data');
-        const markers = (mapData.reports || []).map(m => ({
-          lat: m.latitude,
-          lng: m.longitude,
-          popup: `<strong>${esc(m.reportNumber)}</strong><br>${esc(catLabel(m.category))}<br>${esc(m.description)}<br><a href="#/report/${esc(m.id)}">View</a>`
-        }));
-        const first = markers[0];
-        renderMap('community-map', first?.lat, first?.lng, markers, { zoom: 12 });
+        const mapParams = new URLSearchParams();
+        if (f.category) mapParams.set('category', f.category);
+        if (f.status) mapParams.set('status', f.status);
+        const mapData = await fetchAPI(`/api/community/map-data?${mapParams.toString()}`);
+        const mapReports = mapData.reports || [];
+        if (f.mapMode === 'heatmap') {
+          const points = mapReports.map(m => ({
+            lat: m.latitude,
+            lng: m.longitude,
+            weight: (m.priority === 'critical' ? 1.0 : m.priority === 'medium' ? 0.7 : 0.45) + Math.min(0.3, (m.upvoteCount || 0) * 0.05),
+            popup: `<strong>${esc(m.reportNumber)}</strong> · ${esc(priorityLabel(m.priority))}<br>${esc(catLabel(m.category))}<br>${esc(m.description)}<br><a href="#/report/${esc(m.id)}">View</a>`
+          }));
+          renderHeatmap('community-map', points, { zoom: 12 });
+        } else {
+          const markers = mapReports.map(m => ({
+            lat: m.latitude,
+            lng: m.longitude,
+            popup: `<strong>${esc(m.reportNumber)}</strong><br>${esc(catLabel(m.category))}<br>${esc(m.description)}<br><a href="#/report/${esc(m.id)}">View</a>`
+          }));
+          const first = markers[0];
+          renderMap('community-map', first?.lat, first?.lng, markers, { zoom: 12 });
+        }
       } catch {
         // Ignore map error
       }
     }
 
-    document.getElementById('toggle-community-map')?.addEventListener('click', () => {
-      f.showMap = !f.showMap;
+    document.getElementById('toggle-community-pins')?.addEventListener('click', () => {
+      if (f.showMap && f.mapMode === 'pins') {
+        f.showMap = false;
+      } else {
+        f.showMap = true;
+        f.mapMode = 'pins';
+      }
+      renderCommunityFeedPage(app);
+    });
+
+    document.getElementById('toggle-community-heatmap')?.addEventListener('click', () => {
+      if (f.showMap && f.mapMode === 'heatmap') {
+        f.showMap = false;
+      } else {
+        f.showMap = true;
+        f.mapMode = 'heatmap';
+      }
       renderCommunityFeedPage(app);
     });
 
@@ -1406,6 +1685,180 @@
     `;
   }
 
+  // ─── 6b. ReviewsPage ───────────────────────────────────────────────────────
+
+  async function renderReviewsPage(app) {
+    const hashParts = (window.location.hash || '').split('?');
+    const queryParams = new URLSearchParams(hashParts[1] || '');
+    const preselectedReportId = queryParams.get('reportId') || '';
+
+    const [reviewsData, myReportsData] = await Promise.all([
+      fetchAPI('/api/community/reviews'),
+      state.user ? fetchAPI('/api/reports/my').catch(() => ({ reports: [] })) : Promise.resolve({ reports: [] })
+    ]);
+
+    const summary = reviewsData.summary || {};
+    const reviews = reviewsData.reviews || [];
+    const myReports = myReportsData.reports || [];
+    const breakdown = summary.breakdown || { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    const total = summary.totalReviews || 0;
+
+    let selectedRating = 5;
+
+    app.innerHTML = `
+      <div class="flex justify-between items-center mb-md flex-wrap gap-sm">
+        <div>
+          <h1>App Ratings &amp; Issue Resolution Reviews</h1>
+          <p class="text-sm text-muted">See whether citizens' civic issues are being resolved and how people rate Civ.IQ.</p>
+        </div>
+      </div>
+
+      <div class="grid grid-3 mb-lg">
+        ${C.StatCard ? C.StatCard('Average App Rating', `${summary.averageRating || 0} / 5 ★`, 'primary', '⭐') : ''}
+        ${C.StatCard ? C.StatCard('Issues Solved Rate', `${summary.solvedPercent || 0}%`, 'success', '✅') : ''}
+        ${C.StatCard ? C.StatCard('Total Citizen Reviews', total, 'info', '💬') : ''}
+      </div>
+
+      <div class="grid grid-2 mb-lg">
+        <section class="card">
+          <div class="card-header"><h2>Satisfaction &amp; Resolution Breakdown</h2></div>
+          <div class="card-body">
+            <div class="mb-md">
+              ${[5, 4, 3, 2, 1].map(star => {
+                const count = breakdown[star] || 0;
+                const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                return `
+                  <div class="rating-bar-row">
+                    <span>${star} ★</span>
+                    <div class="rating-bar-track"><div class="rating-bar-fill" style="width:${pct}%"></div></div>
+                    <span class="text-xs text-muted">${count} (${pct}%)</span>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+            <div class="detail-row"><span class="detail-label">Issues Completely Solved</span><span class="detail-value"><strong>${summary.resolvedYes || 0}</strong></span></div>
+            <div class="detail-row"><span class="detail-label">Partially Solved</span><span class="detail-value"><strong>${summary.resolvedPartially || 0}</strong></span></div>
+            <div class="detail-row"><span class="detail-label">Not Solved Yet</span><span class="detail-value"><strong>${summary.resolvedNo || 0}</strong></span></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header"><h2>Share Your Rating &amp; Experience</h2></div>
+          <div class="card-body">
+            ${!state.user ? `
+              <p class="text-muted mb-md">Sign in with any demo account in the top bar to submit a rating and review.</p>
+            ` : `
+              <form id="app-review-form">
+                <div class="form-group">
+                  <label class="form-label">Your App Rating</label>
+                  <div class="star-picker" id="star-picker" role="radiogroup" aria-label="App rating in stars">
+                    ${[1, 2, 3, 4, 5].map(n => `
+                      <button type="button" class="star-btn ${n <= selectedRating ? 'active' : ''}" data-star="${n}" aria-label="${n} stars">★</button>
+                    `).join('')}
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="review-resolved">Was your civic issue solved?</label>
+                  <select id="review-resolved" class="form-select" required>
+                    <option value="yes">Yes — Issue was completely solved</option>
+                    <option value="partially">Partially — Progress made, still ongoing</option>
+                    <option value="no">Not yet — Still waiting for resolution</option>
+                  </select>
+                </div>
+                ${myReports.length > 0 ? `
+                  <div class="form-group">
+                    <label class="form-label" for="review-report-id">Related Report (optional)</label>
+                    <select id="review-report-id" class="form-select">
+                      <option value="">General App Feedback</option>
+                      ${myReports.map(r => `
+                        <option value="${esc(r.id)}" ${r.id === preselectedReportId ? 'selected' : ''}>
+                          ${esc(r.reportNumber)} — ${esc(catLabel(r.category))} (${esc(statusLabel(r.status))})
+                        </option>
+                      `).join('')}
+                    </select>
+                  </div>
+                ` : ''}
+                <div class="form-group">
+                  <label class="form-label" for="review-title">Headline (optional)</label>
+                  <input type="text" id="review-title" class="form-input" placeholder="e.g., Quick pothole repair!" maxlength="100">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="review-comment">Your Review</label>
+                  <textarea id="review-comment" class="form-textarea" rows="3" minlength="10" required placeholder="Tell us if your issue was solved and how Civ.IQ worked for you…"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary" id="submit-review-btn">Submit Review</button>
+              </form>
+            `}
+          </div>
+        </section>
+      </div>
+
+      <section class="card">
+        <div class="card-header"><h2>Recent Citizen Reviews (${reviews.length})</h2></div>
+        <div class="card-body">
+          ${reviews.length === 0 ? '<p class="text-muted">No reviews yet. Be the first to share feedback!</p>' : `
+            <div class="grid grid-2">
+              ${reviews.map(rv => {
+                const solvedBadge = rv.issueResolved === 'yes'
+                  ? '<span class="badge badge-success">✅ Issue Solved</span>'
+                  : rv.issueResolved === 'partially'
+                    ? '<span class="badge badge-warning">🟡 Partially Solved</span>'
+                    : '<span class="badge badge-danger">⏳ Not Solved Yet</span>';
+                return `
+                  <article class="card review-card">
+                    <div class="card-body">
+                      <div class="flex justify-between items-center mb-sm flex-wrap gap-sm">
+                        <span class="review-stars" aria-label="${rv.rating} out of 5 stars">${'★'.repeat(rv.rating)}${'☆'.repeat(5 - rv.rating)}</span>
+                        ${solvedBadge}
+                      </div>
+                      ${rv.title ? `<h3 class="mb-sm">${esc(rv.title)}</h3>` : ''}
+                      <p class="mb-sm">${esc(rv.comment)}</p>
+                      <div class="text-xs text-muted flex justify-between flex-wrap gap-sm">
+                        <span>By ${esc(rv.authorName)}</span>
+                        <span>${rv.reportNumber ? `Report ${esc(rv.reportNumber)} · ` : ''}${timeAgo(rv.createdAt)}</span>
+                      </div>
+                    </div>
+                  </article>
+                `;
+              }).join('')}
+            </div>
+          `}
+        </div>
+      </section>
+    `;
+
+    const starBtns = app.querySelectorAll('#star-picker .star-btn');
+    starBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedRating = Number(btn.dataset.star) || 5;
+        starBtns.forEach(b => b.classList.toggle('active', Number(b.dataset.star) <= selectedRating));
+      });
+    });
+
+    document.getElementById('app-review-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const submitBtn = document.getElementById('submit-review-btn');
+      submitBtn.disabled = true;
+      try {
+        await fetchAPI('/api/community/reviews', {
+          method: 'POST',
+          body: {
+            rating: selectedRating,
+            issueResolved: document.getElementById('review-resolved').value,
+            reportId: document.getElementById('review-report-id')?.value || preselectedReportId || null,
+            title: document.getElementById('review-title').value.trim(),
+            comment: document.getElementById('review-comment').value.trim()
+          }
+        });
+        showToast('Thank you! Your review has been published.', 'success');
+        renderReviewsPage(app);
+      } catch (err) {
+        showToast(err.message, 'error');
+        submitBtn.disabled = false;
+      }
+    });
+  }
+
   // ─── 7. StaffDashboardPage ─────────────────────────────────────────────────
 
   async function renderStaffDashboardPage(app) {
@@ -1447,6 +1900,20 @@
         </section>
       </div>
 
+      <section class="card mb-lg">
+        <div class="card-header flex justify-between items-center flex-wrap gap-sm">
+          <h2>🔥 Civic Issue Density Heatmap</h2>
+          <div class="heatmap-legend">
+            <span>Low</span>
+            <span class="heatmap-gradient"></span>
+            <span>High / Critical</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="map-container" id="staff-dashboard-heatmap"></div>
+        </div>
+      </section>
+
       <section class="card">
         <div class="card-header"><h2>Recent Reports</h2></div>
         <div class="card-body">
@@ -1470,6 +1937,19 @@
         </div>
       </section>
     `;
+
+    try {
+      const mapData = await fetchAPI('/api/community/map-data');
+      const points = (mapData.reports || []).map(m => ({
+        lat: m.latitude,
+        lng: m.longitude,
+        weight: (m.priority === 'critical' ? 1.0 : m.priority === 'medium' ? 0.7 : 0.45) + Math.min(0.3, (m.upvoteCount || 0) * 0.05),
+        popup: `<strong>${esc(m.reportNumber)}</strong> · ${esc(priorityLabel(m.priority))}<br>${esc(catLabel(m.category))}<br>${esc(m.description)}<br><a href="#/staff/report/${esc(m.id)}">Open in Staff View</a>`
+      }));
+      renderHeatmap('staff-dashboard-heatmap', points, { zoom: 12 });
+    } catch {
+      // Ignore heatmap load error
+    }
   }
 
   // ─── 8. StaffReportListPage ────────────────────────────────────────────────

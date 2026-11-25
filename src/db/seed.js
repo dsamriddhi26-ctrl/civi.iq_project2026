@@ -16,6 +16,7 @@ function seedDatabase(db) {
   // ── Idempotency check ──────────────────────────────────────────────────
   const existing = db.prepare('SELECT COUNT(*) AS cnt FROM departments').get();
   if (existing.cnt > 0) {
+    seedAppReviews(db);
     return; // Already seeded
   }
 
@@ -441,6 +442,56 @@ function seedDatabase(db) {
     'Welcome to Civ.IQ',
     'Welcome to the Civ.IQ admin dashboard. You have full access to all reports and settings.',
     1, hoursAgo(500));
+
+  seedAppReviews(db);
+}
+
+/**
+ * Seed initial citizen ratings & reviews if none exist yet.
+ * @param {import('node:sqlite').DatabaseSync} db
+ */
+function seedAppReviews(db) {
+  const existingReviews = db.prepare('SELECT COUNT(*) AS cnt FROM app_reviews').get();
+  if (existingReviews.cnt > 0) return;
+
+  const priya = db.prepare("SELECT id FROM users WHERE email = 'priya@demo.civiq.local'").get();
+  const rahul = db.prepare("SELECT id FROM users WHERE email = 'rahul@demo.civiq.local'").get();
+  const resolvedReport = db.prepare("SELECT id FROM reports WHERE status = 'resolved' LIMIT 1").get();
+  const closedReport = db.prepare("SELECT id FROM reports WHERE status = 'closed' LIMIT 1").get();
+  const inProgressReport = db.prepare("SELECT id FROM reports WHERE status = 'in_progress' LIMIT 1").get();
+
+  if (!priya || !rahul) return;
+
+  const hoursAgo = (h) => new Date(Date.now() - h * 3600000).toISOString().replace('T', ' ').substring(0, 19);
+  const insertReview = db.prepare(`
+    INSERT INTO app_reviews (id, user_id, report_id, rating, issue_resolved, title, comment, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  insertReview.run(
+    crypto.randomUUID(), priya.id, resolvedReport ? resolvedReport.id : null,
+    5, 'yes', 'Dadar footpath debris cleared quickly!',
+    'Reported illegal construction debris blocking the footpath and Sanitation cleared it within days. Tracking updates kept me informed the whole time.',
+    hoursAgo(80)
+  );
+  insertReview.run(
+    crypto.randomUUID(), priya.id, closedReport ? closedReport.id : null,
+    4, 'yes', 'Easy to pin exact location on the map',
+    'The map pin and automatic department routing saved me from calling multiple municipal offices. Water leak was fixed cleanly.',
+    hoursAgo(150)
+  );
+  insertReview.run(
+    crypto.randomUUID(), rahul.id, inProgressReport ? inProgressReport.id : null,
+    4, 'partially', 'Fast emergency response, waiting on permanent pole',
+    'Staff responded quickly to the exposed streetlight wire hazard and insulated it safely. Still waiting on permanent replacement.',
+    hoursAgo(3)
+  );
+  insertReview.run(
+    crypto.randomUUID(), rahul.id, null,
+    5, 'yes', 'Much better than guessing which department to call',
+    'Being able to see community issues on the map and upvote urgent potholes in our neighborhood is super helpful.',
+    hoursAgo(20)
+  );
 }
 
 module.exports = { seedDatabase };

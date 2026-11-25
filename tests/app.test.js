@@ -14,6 +14,7 @@ const { initDatabase } = require('../src/db/schema.js');
 const { seedDatabase } = require('../src/db/seed.js');
 const { classifyReport, getDuplicateSuggestions } = require('../src/services/classifier.js');
 const { calculateDeadline, checkEscalations } = require('../src/services/sla.js');
+const { extractExifGps } = require('../src/utils/helpers.js');
 const { createAppServer } = require('../server.js');
 
 /**
@@ -212,6 +213,105 @@ test('Server-side role authorization, private note protection, and upvote unique
     assert.throws(() => {
       db.prepare('INSERT INTO upvotes (id, report_id, user_id) VALUES (?, ?, ?)').run(upId2, freshReportId, citizen.id);
     });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    db.close();
+  }
+});
+
+test('App ratings & reviews API and EXIF GPS extraction', async () => {
+  // 1. Build a minimal synthetic little-endian JPEG EXIF APP1 buffer with GPS (19.0760, 72.8777)
+  const buf = Buffer.alloc(160, 0);
+  buf[0] = 0xFF; buf[1] = 0xD8; // SOI
+  buf[2] = 0xFF; buf[3] = 0xE1; // APP1
+  buf.writeUInt16BE(150, 4);    // segment length
+  buf.write('Exif\0\0', 6, 'ascii');
+  const tiff = 12;
+  buf.write('II', tiff, 'ascii'); // little-endian
+  buf.writeUInt16LE(42, tiff + 2);
+  buf.writeUInt32LE(8, tiff + 4);  // IFD0 offset
+
+  // IFD0 at tiff + 8: 1 entry (0x8825 GPSInfoIFDPointer) -> points to tiff + 26
+  buf.writeUInt16LE(1, tiff + 8);
+  buf.writeUInt16LE(0x8825, tiff + 10);
+  buf.writeUInt16LE(4, tiff + 12);
+  buf.writeUInt32LE(1, tiff + 14);
+  buf.writeUInt32LE(26, tiff + 18);
+  buf.writeUInt32LE(0, tiff + 22);
+
+  // GPS IFD at tiff + 26: 4 entries
+  const gps = tiff + 26;
+  buf.writeUInt16LE(4, gps);
+  // Entry 0: GPSLatitudeRef = 'N'
+  buf.writeUInt16LE(1, gps + 2);
+  buf.writeUInt16LE(2, gps + 4);
+  buf.writeUInt32LE(2, gps + 6);
+  buf[gps + 10] = 78; // 'N'
+  // Entry 1: GPSLatitude -> tiff + 80
+  buf.writeUInt16LE(2, gps + 14);
+  buf.writeUInt16LE(5, gps + 16);
+  buf.writeUInt32LE(3, gps + 18);
+  buf.writeUInt32LE(80, gps + 22);
+  // Entry 2: GPSLongitudeRef = 'E'
+  buf.writeUInt16LE(3, gps + 26);
+  buf.writeUInt16LE(2, gps + 28);
+  buf.writeUInt32LE(2, gps + 30);
+  buf[gps + 34] = 69; // 'E'
+  // Entry 3: GPSLongitude -> tiff + 104
+  buf.writeUInt16LE(4, gps + 38);
+  buf.writeUInt16LE(5, gps + 40);
+  buf.writeUInt32LE(3, gps + 42);
+  buf.writeUInt32LE(104, gps + 46);
+
+  // Lat: 19 deg, 4 min, 33.6 sec (336/10) => ~19.0760
+  buf.writeUInt32LE(19, tiff + 80); buf.writeUInt32LE(1, tiff + 84);
+  buf.writeUInt32LE(4, tiff + 88); buf.writeUInt32LE(1, tiff + 92);
+  buf.writeUInt32LE(336, tiff + 96); buf.writeUInt32LE(10, tiff + 100);
+  // Lng: 72 deg, 52 min, 39.72 sec (3972/100) => ~72.8777
+  buf.writeUInt32LE(72, tiff + 104); buf.writeUInt32LE(1, tiff + 108);
+  buf.writeUInt32LE(52, tiff + 112); buf.writeUInt32LE(1, tiff + 116);
+  buf.writeUInt32LE(3972, tiff + 120); buf.writeUInt32LE(100, tiff + 124);
+
+  const coords = extractExifGps(buf);
+  assert.ok(coords, 'Expected EXIF GPS coordinates to be extracted');
+  assert.ok(Math.abs(coords.latitude - 19.076) < 0.001);
+  assert.ok(Math.abs(coords.longitude - 72.8777) < 0.001);
+
+  // 2. Reviews API
+  const { server, db } = createAppServer(':memory:');
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const initial = await request(baseUrl, 'GET', '/api/community/reviews');
+    assert.equal(initial.status, 200);
+    assert.ok(initial.json.summary.totalReviews >= 4);
+    assert.ok(initial.json.summary.averageRating > 0);
+
+    // Unauthenticated POST should return 401
+    const unauthPost = await request(baseUrl, 'POST', '/api/community/reviews', {
+      body: { rating: 5, issueResolved: 'yes', comment: 'Great app for reporting issues!' }
+    });
+    assert.equal(unauthPost.status, 401);
+
+    // Authenticated citizen can submit a review
+    const citizen = db.prepare("SELECT id FROM users WHERE role = 'citizen' LIMIT 1").get();
+    const login = await request(baseUrl, 'POST', '/api/auth/demo-login', { body: { userId: citizen.id } });
+    const cookie = login.setCookie[0].split(';')[0];
+
+    const created = await request(baseUrl, 'POST', '/api/community/reviews', {
+      cookie,
+      body: {
+        rating: 5,
+        issueResolved: 'yes',
+        title: 'Problem fixed fast',
+        comment: 'The pothole near my street was repaired within 48 hours.'
+      }
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.json.review.rating, 5);
+    assert.equal(created.json.review.issueResolved, 'yes');
   } finally {
     await new Promise((resolve) => server.close(resolve));
     db.close();

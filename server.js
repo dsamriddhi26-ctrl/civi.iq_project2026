@@ -238,6 +238,12 @@ function createAppServer(dbPath = DB_PATH) {
         if (method === 'GET' && pathname === '/api/community/map-data') {
           return community.getMapData(req, res);
         }
+        if (method === 'GET' && pathname === '/api/community/reviews') {
+          return community.getReviews(req, res);
+        }
+        if (method === 'POST' && pathname === '/api/community/reviews') {
+          return await community.createReview(req, res);
+        }
         if (method === 'GET' && pathname === '/api/notifications') {
           return community.getNotifications(req, res);
         }

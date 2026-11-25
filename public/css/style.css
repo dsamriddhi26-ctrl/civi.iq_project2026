@@ -2279,3 +2279,72 @@ textarea:focus-visible {
   color: var(--gray-900);
   margin: var(--space-md) 0;
 }
+
+/* Heatmap legend */
+.heatmap-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--font-size-xs);
+  color: var(--gray-600);
+}
+
+.heatmap-gradient {
+  display: inline-block;
+  width: 110px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, #2e86dc, #2ed288, #f5d21e, #dc1919);
+}
+
+/* App Ratings & Reviews */
+.star-picker {
+  display: inline-flex;
+  gap: var(--space-xs);
+}
+
+.star-btn {
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+  color: var(--gray-300);
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.star-btn.active,
+.star-btn:hover {
+  color: #f39c12;
+  border-color: #f39c12;
+}
+
+.review-stars {
+  color: #f39c12;
+  font-size: 1.1rem;
+  letter-spacing: 1px;
+}
+
+.rating-bar-row {
+  display: grid;
+  grid-template-columns: 42px 1fr 64px;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
+  font-size: var(--font-size-sm);
+}
+
+.rating-bar-track {
+  height: 10px;
+  background: var(--gray-100);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.rating-bar-fill {
+  height: 100%;
+  background: #f39c12;
+  border-radius: var(--radius-full);
+}
