@@ -41,6 +41,7 @@ function initDatabase(dbPath) {
     CREATE TABLE IF NOT EXISTS users (
       id              TEXT PRIMARY KEY,
       email           TEXT UNIQUE NOT NULL,
+      phone           TEXT,
       display_name    TEXT NOT NULL,
       alias           TEXT,
       role            TEXT NOT NULL CHECK(role IN ('citizen','staff','admin')),
@@ -50,6 +51,13 @@ function initDatabase(dbPath) {
       updated_at      TEXT DEFAULT (datetime('now'))
     )
   `);
+
+  // Backward-compatible migration if existing DB lacks phone column
+  const userCols = db.prepare('PRAGMA table_info(users)').all();
+  if (!userCols.some(c => c.name === 'phone')) {
+    db.exec('ALTER TABLE users ADD COLUMN phone TEXT');
+  }
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone) WHERE phone IS NOT NULL');
 
   // ─── Service Areas ───────────────────────────────────────────────────────
   db.exec(`

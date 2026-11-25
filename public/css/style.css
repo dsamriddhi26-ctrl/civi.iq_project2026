@@ -2348,3 +2348,70 @@ textarea:focus-visible {
   background: #f39c12;
   border-radius: var(--radius-full);
 }
+
+/* Auth first screen (Role selection + Email/Phone Login/Signup) */
+.auth-card {
+  max-width: 680px;
+  margin: var(--space-lg) auto;
+}
+
+.role-selector {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-sm);
+}
+
+@media (max-width: 640px) {
+  .role-selector {
+    grid-template-columns: 1fr;
+  }
+}
+
+.role-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: var(--space-md);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.role-option:hover {
+  border-color: var(--color-secondary);
+}
+
+.role-option.active {
+  border-color: var(--color-primary);
+  background: var(--color-info-light);
+}
+
+.role-icon {
+  font-size: 1.5rem;
+}
+
+.auth-tabs {
+  display: flex;
+  border-bottom: 2px solid var(--gray-200);
+  gap: var(--space-sm);
+}
+
+.auth-tab {
+  padding: var(--space-sm) var(--space-md);
+  border: none;
+  background: none;
+  font-weight: 600;
+  color: var(--gray-600);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+}
+
+.auth-tab.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}

@@ -93,6 +93,7 @@
     return {
       step: 1,
       category: 'pothole',
+      severity: 'medium',
       description: '',
       isAnonymous: false,
       file: null,
@@ -700,8 +701,18 @@
     app.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>Loading…</p></div>';
 
     try {
-      if (path === '/' || path === '/home') {
-        await renderHomePage(app);
+      if (path === '/auth') {
+        if (state.user) {
+          navigate('#/home');
+          return;
+        }
+        renderAuthPage(app);
+      } else if (path === '/' || path === '/home') {
+        if (!state.user) {
+          renderAuthPage(app);
+        } else {
+          await renderHomePage(app);
+        }
       } else if (path === '/report/new') {
         await renderReportNewPage(app);
       } else if (path.match(/^\/report\/([^/]+)$/)) {
@@ -775,11 +786,161 @@
         <div class="empty-state-icon" aria-hidden="true">👤</div>
         <h1>Sign In Required</h1>
         <p class="text-muted mb-md">
-          Please select a demo account in the top bar to ${esc(actionLabel)}.
+          Please sign up or log in (as Citizen, Staff, or Admin) to ${esc(actionLabel)}.
         </p>
-        <a href="#/community" class="btn btn-secondary">Browse Community Reports</a>
+        <div class="flex gap-sm justify-center flex-wrap">
+          <a href="#/auth" class="btn btn-primary">Sign Up / Log In</a>
+          <a href="#/community" class="btn btn-secondary">Browse Community Reports</a>
+        </div>
       </div>
     `;
+  }
+
+  // ─── 0. AuthPage (First Screen: Role Selection + Login / Signup) ───────────
+
+  function renderAuthPage(app) {
+    let selectedRole = 'citizen';
+    let authMode = 'login'; // 'login' | 'signup'
+
+    const roleMeta = {
+      citizen: { icon: '👤', title: 'Citizen', desc: 'Report issues, track progress, upvote & review' },
+      staff:   { icon: '🛠️', title: 'Municipal Staff', desc: 'Review queue, assign crews, update status' },
+      admin:   { icon: '🔑', title: 'Administrator', desc: 'Manage departments, SLA rules & settings' }
+    };
+
+    const draw = () => {
+      const demoForRole = (state.demoUsers || []).filter(u => u.role === selectedRole);
+
+      app.innerHTML = `
+        <section class="card auth-card">
+          <div class="card-header">
+            <h1>Welcome to Civ.IQ</h1>
+            <p class="text-sm text-muted">Select your role, then sign up or log in using your email or phone number.</p>
+          </div>
+          <div class="card-body">
+            <div class="emergency-banner mb-md">
+              <strong>⚠️ Local Demo Authentication:</strong> Accounts created here are stored in the local SQLite database for development/demo use (no real SMS OTP or email verification is sent).
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">1. Choose Your Role</label>
+              <div class="role-selector" role="radiogroup" aria-label="Account role">
+                ${Object.entries(roleMeta).map(([key, info]) => `
+                  <button type="button" class="role-option ${selectedRole === key ? 'active' : ''}" data-role="${key}" aria-pressed="${selectedRole === key}">
+                    <span class="role-icon" aria-hidden="true">${info.icon}</span>
+                    <strong>${esc(info.title)}</strong>
+                    <span class="text-xs text-muted">${esc(info.desc)}</span>
+                  </button>
+                `).join('')}
+              </div>
+            </div>
+
+            <div class="auth-tabs mb-md" role="tablist">
+              <button type="button" class="auth-tab ${authMode === 'login' ? 'active' : ''}" data-mode="login" role="tab">Log In</button>
+              <button type="button" class="auth-tab ${authMode === 'signup' ? 'active' : ''}" data-mode="signup" role="tab">Sign Up</button>
+            </div>
+
+            <form id="auth-form" novalidate>
+              ${authMode === 'signup' ? `
+                <div class="form-group">
+                  <label class="form-label" for="auth-name">Full Name</label>
+                  <input type="text" id="auth-name" class="form-input" placeholder="e.g., Samriddhi" minlength="2" required>
+                </div>
+              ` : ''}
+
+              <div class="form-group">
+                <label class="form-label" for="auth-contact">Email Address or Phone Number</label>
+                <input type="text" id="auth-contact" class="form-input" placeholder="e.g., name@example.com or 9876543210" required>
+                <p class="form-help">Enter a valid email or a 7–15 digit phone number.</p>
+              </div>
+
+              <p class="form-error mb-sm" id="auth-error" hidden></p>
+
+              <button type="submit" class="btn btn-primary btn-lg" style="width: 100%;" id="auth-submit-btn">
+                ${authMode === 'signup' ? `Sign Up as ${roleMeta[selectedRole].title}` : `Log In as ${roleMeta[selectedRole].title}`}
+              </button>
+            </form>
+
+            ${demoForRole.length > 0 ? `
+              <div class="mt-lg">
+                <p class="text-xs text-muted mb-sm">Quick Demo Account (${esc(roleMeta[selectedRole].title)}):</p>
+                <div class="flex gap-sm flex-wrap">
+                  ${demoForRole.map(u => `
+                    <button type="button" class="btn btn-ghost btn-sm auth-demo-quick" data-email="${esc(u.email)}">
+                      ${esc(u.displayName)} (${esc(u.email)})
+                    </button>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            <div class="mt-lg text-center">
+              <a href="#/community" class="text-sm">Browse Public Community Feed &amp; Heatmap as Guest &rarr;</a>
+            </div>
+          </div>
+        </section>
+      `;
+
+      app.querySelectorAll('.role-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+          selectedRole = btn.dataset.role;
+          draw();
+        });
+      });
+
+      app.querySelectorAll('.auth-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          authMode = tab.dataset.mode;
+          draw();
+        });
+      });
+
+      app.querySelectorAll('.auth-demo-quick').forEach(btn => {
+        btn.addEventListener('click', () => {
+          authMode = 'login';
+          draw();
+          const contactEl = document.getElementById('auth-contact');
+          if (contactEl) contactEl.value = btn.dataset.email || '';
+        });
+      });
+
+      document.getElementById('auth-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const errEl = document.getElementById('auth-error');
+        const submitBtn = document.getElementById('auth-submit-btn');
+        const contact = document.getElementById('auth-contact')?.value.trim() || '';
+        const displayName = document.getElementById('auth-name')?.value.trim() || '';
+
+        if (errEl) errEl.hidden = true;
+        submitBtn.disabled = true;
+
+        try {
+          const endpoint = authMode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
+          const payload = authMode === 'signup'
+            ? { role: selectedRole, displayName, contact }
+            : { role: selectedRole, contact };
+
+          const data = await fetchAPI(endpoint, { method: 'POST', body: payload });
+          state.user = data.user;
+          renderDemoAuthBar();
+          renderNavigation();
+          await refreshNotifications();
+          showToast(
+            `${authMode === 'signup' ? 'Welcome' : 'Signed in'}, ${data.user.displayName} (${data.user.role})`,
+            'success'
+          );
+          navigate(data.user.role === 'staff' || data.user.role === 'admin' ? '#/staff/dashboard' : '#/home');
+        } catch (err) {
+          if (errEl) {
+            errEl.textContent = err.message;
+            errEl.hidden = false;
+          }
+          submitBtn.disabled = false;
+        }
+      });
+    };
+
+    draw();
   }
 
   // ─── 1. HomePage ───────────────────────────────────────────────────────────
@@ -908,13 +1069,24 @@
           <div class="card-body">
             ${stepIndicator}
             <form id="step1-form" novalidate>
-              <div class="form-group">
-                <label class="form-label" for="report-category">Category</label>
-                <select id="report-category" class="form-select" required>
-                  ${Object.entries(CATEGORY_LABELS).map(([val, lbl]) => `
-                    <option value="${esc(val)}" ${d.category === val ? 'selected' : ''}>${esc(lbl)}</option>
-                  `).join('')}
-                </select>
+              <div class="grid grid-2">
+                <div class="form-group">
+                  <label class="form-label" for="report-category">Category</label>
+                  <select id="report-category" class="form-select" required>
+                    ${Object.entries(CATEGORY_LABELS).map(([val, lbl]) => `
+                      <option value="${esc(val)}" ${d.category === val ? 'selected' : ''}>${esc(lbl)}</option>
+                    `).join('')}
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="report-severity">Severity</label>
+                  <select id="report-severity" class="form-select" required>
+                    <option value="low" ${d.severity === 'low' ? 'selected' : ''}>Low — Minor or cosmetic issue</option>
+                    <option value="medium" ${d.severity === 'medium' ? 'selected' : ''}>Medium — Needs standard attention</option>
+                    <option value="high" ${d.severity === 'high' ? 'selected' : ''}>High — Urgent / safety hazard</option>
+                  </select>
+                </div>
               </div>
 
               <div class="form-group">
@@ -956,6 +1128,7 @@
       document.getElementById('step1-form').addEventListener('submit', (e) => {
         e.preventDefault();
         const cat = document.getElementById('report-category').value;
+        const sev = document.getElementById('report-severity').value;
         const desc = document.getElementById('report-description').value.trim();
         const anon = document.getElementById('report-anonymous').checked;
         const errEl = document.getElementById('step1-desc-error');
@@ -967,6 +1140,7 @@
         }
         errEl.hidden = true;
         d.category = cat;
+        d.severity = sev;
         d.description = desc;
         d.isAnonymous = anon;
         d.step = 2;
@@ -1084,6 +1258,7 @@
             </div>
             <div class="card-body">
               <p><strong>Category:</strong> ${esc(catLabel(d.category))}</p>
+              <p><strong>Severity:</strong> ${esc(d.severity === 'high' ? 'High (Critical)' : d.severity === 'low' ? 'Low' : 'Medium')}</p>
               <p><strong>Description:</strong> ${esc(d.description)}</p>
               <p><strong>Visibility:</strong> ${d.isAnonymous ? 'Anonymous to Community' : 'Publicly attributed'}</p>
               ${d.previewSrc ? `<img src="${esc(d.previewSrc)}" alt="Preview" class="image-preview mt-sm">` : ''}
@@ -1201,6 +1376,7 @@
       try {
         const fd = new FormData();
         fd.append('category', d.category);
+        fd.append('severity', d.severity || 'medium');
         fd.append('description', d.description);
         fd.append('is_anonymous', d.isAnonymous ? '1' : '0');
         if (d.latitude != null) fd.append('latitude', String(d.latitude));

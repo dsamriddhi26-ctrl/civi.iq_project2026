@@ -87,8 +87,10 @@ function reportRoutes(db) {
         const reportNumber = generateReportNumber(db);
         const now = new Date().toISOString();
 
-        // Calculate SLA deadline
-        const priority = classification.priority || 'medium';
+        // Map optional user-selected severity (high/medium/low/critical) to internal priority
+        const rawSeverity = String(fields.severity || fields.priority || '').trim().toLowerCase();
+        const severityMap = { high: 'critical', critical: 'critical', medium: 'medium', low: 'low' };
+        const priority = severityMap[rawSeverity] || classification.priority || 'medium';
         const slaDeadline = calculateDeadline(db, priority, now);
 
         const insertStmt = db.prepare(`

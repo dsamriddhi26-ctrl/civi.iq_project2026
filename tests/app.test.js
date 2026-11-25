@@ -317,3 +317,55 @@ test('App ratings & reviews API and EXIF GPS extraction', async () => {
     db.close();
   }
 });
+
+test('Role-based email/phone signup & login, and user-selected report severity', async () => {
+  const { server, db } = createAppServer(':memory:');
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    // 1. Signup as Citizen with phone number
+    const signupRes = await request(baseUrl, 'POST', '/api/auth/signup', {
+      body: { role: 'citizen', displayName: 'Sam Citizen', contact: '9876543210' }
+    });
+    assert.equal(signupRes.status, 201);
+    assert.equal(signupRes.json.user.role, 'citizen');
+    assert.equal(signupRes.json.user.phone, '9876543210');
+
+    // Duplicate phone signup should fail with 409
+    const dupRes = await request(baseUrl, 'POST', '/api/auth/signup', {
+      body: { role: 'citizen', displayName: 'Sam Duplicate', contact: '9876543210' }
+    });
+    assert.equal(dupRes.status, 409);
+
+    // Login with wrong role should fail with 403
+    const wrongRoleRes = await request(baseUrl, 'POST', '/api/auth/login', {
+      body: { role: 'admin', contact: '9876543210' }
+    });
+    assert.equal(wrongRoleRes.status, 403);
+
+    // Login with matching role and phone should succeed
+    const loginRes = await request(baseUrl, 'POST', '/api/auth/login', {
+      body: { role: 'citizen', contact: '9876543210' }
+    });
+    assert.equal(loginRes.status, 200);
+    const cookie = loginRes.setCookie[0].split(';')[0];
+
+    // 2. Submit report with explicit severity = 'high' -> stored as priority 'critical'
+    const createRes = await request(baseUrl, 'POST', '/api/reports', {
+      cookie,
+      body: {
+        category: 'pothole',
+        severity: 'high',
+        description: 'Large road crater near bus stop causing severe traffic slowdown',
+        address: 'MG Road, Sector 4'
+      }
+    });
+    assert.equal(createRes.status, 201);
+    assert.equal(createRes.json.report.priority, 'critical');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    db.close();
+  }
+});

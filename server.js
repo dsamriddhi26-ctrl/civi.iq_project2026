@@ -194,6 +194,12 @@ function createAppServer(dbPath = DB_PATH) {
         if (method === 'POST' && pathname === '/api/auth/demo-login') {
           return await auth.demoLogin(req, res);
         }
+        if (method === 'POST' && pathname === '/api/auth/signup') {
+          return await auth.signup(req, res);
+        }
+        if (method === 'POST' && pathname === '/api/auth/login') {
+          return await auth.login(req, res);
+        }
         if (method === 'POST' && pathname === '/api/auth/logout') {
           return auth.logout(req, res);
         }
