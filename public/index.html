@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Civ.IQ — Report civic issues, track resolution, and build a better community. A civic issue reporting platform.">
+  <meta name="theme-color" content="#1a5276">
+  <title>Civ.IQ — Civic Issue Reporting</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin="">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <!-- Demo Authentication Bar -->
+  <div class="demo-auth-bar" role="banner" aria-label="Demo authentication controls">
+    <span class="demo-auth-label">⚠️ DEMO MODE — Development authentication only</span>
+    <div class="demo-auth-buttons">
+      <button class="demo-btn" data-user-id="1" aria-label="Login as Priya (Citizen)">👤 Citizen (Priya)</button>
+      <button class="demo-btn" data-user-id="2" aria-label="Login as Rahul (Citizen)">👤 Citizen (Rahul)</button>
+      <button class="demo-btn" data-user-id="3" aria-label="Login as Meera (Staff)">🛠️ Staff (Meera)</button>
+      <button class="demo-btn" data-user-id="4" aria-label="Login as Arjun (Admin)">🔑 Admin (Arjun)</button>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="site-header" role="banner">
+    <div class="header-container">
+      <a href="#/home" class="logo" aria-label="Civ.IQ Home">
+        <span class="logo-icon" aria-hidden="true">🏛️</span>
+        <span class="logo-text">Civ.IQ</span>
+      </a>
+
+      <!-- Mobile hamburger toggle (CSS-only) -->
+      <input type="checkbox" id="nav-toggle" class="nav-toggle-input sr-only" aria-label="Toggle navigation menu">
+      <label for="nav-toggle" class="nav-toggle-label" aria-label="Open navigation menu">
+        <span class="hamburger" aria-hidden="true"></span>
+      </label>
+
+      <nav class="main-nav" id="main-nav" role="navigation" aria-label="Main navigation">
+        <!-- Navigation links injected by app.js based on user role -->
+      </nav>
+
+      <!-- Notification Bell -->
+      <div class="notification-bell" id="notification-bell" aria-label="Notifications">
+        <button class="bell-btn" aria-haspopup="true" aria-expanded="false" aria-label="View notifications">
+          <span class="bell-icon" aria-hidden="true">🔔</span>
+          <span class="notification-badge" id="notification-badge" aria-live="polite" hidden>0</span>
+        </button>
+        <div class="notification-dropdown" id="notification-dropdown" role="menu" aria-label="Notification list" hidden>
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Area -->
+  <main id="app" role="main" aria-live="polite">
+    <!-- SPA content renders here -->
+    <div class="loading-spinner" aria-label="Loading">
+      <div class="spinner"></div>
+      <p>Loading Civ.IQ…</p>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer" role="contentinfo">
+    <div class="footer-container">
+      <div class="footer-disclaimer">
+        <strong>⚠️ Civ.IQ is not an emergency service.</strong>
+        For emergencies, please call your local emergency number.
+      </div>
+      <div class="footer-links">
+        <span>&copy; 2024 Civ.IQ</span>
+        <span aria-hidden="true">·</span>
+        <span>Civic Issue Reporting Platform</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container" role="alert" aria-live="assertive" aria-atomic="true">
+    <!-- Toast notifications injected here -->
+  </div>
+
+  <!-- Modal Overlay Container -->
+  <div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modal-title"></h2>
+        <button class="modal-close" aria-label="Close dialog">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-actions" id="modal-actions"></div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin=""></script>
+  <script src="/js/components/all.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
