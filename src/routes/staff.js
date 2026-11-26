@@ -224,6 +224,16 @@ function staffRoutes(db) {
         ORDER BY al.created_at DESC
       `).all(reportId);
 
+      // Community resolution verifications
+      const verifications = db.prepare(`
+        SELECT rv.*, u.display_name as author_name
+        FROM resolution_verifications rv
+        LEFT JOIN users u ON rv.user_id = u.id
+        WHERE rv.report_id = ? AND rv.is_active = 1
+        ORDER BY rv.created_at DESC
+      `).all(reportId);
+      const supportCount = db.prepare('SELECT COUNT(*) as count FROM report_supports WHERE report_id = ?').get(reportId).count;
+
       const now = new Date().toISOString();
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -257,6 +267,18 @@ function staffRoutes(db) {
           isDuplicate: !!report.is_duplicate,
           duplicateOf: report.duplicate_of,
           upvoteCount: report.upvote_count,
+          supportCount,
+          verificationState: report.verification_state || 'none',
+          verificationDeadline: report.verification_deadline || null,
+          verifiedAt: report.verified_at || null,
+          verifications: verifications.map(v => ({
+            id: v.id,
+            vote: v.vote,
+            comment: v.comment,
+            imagePath: v.image_path ? `/uploads/${v.image_path}` : null,
+            author: v.author_name,
+            createdAt: v.created_at
+          })),
           escalationLevel: report.escalation_level,
           isPaused: !!report.is_paused,
           pausedAt: report.paused_at,
@@ -364,8 +386,18 @@ function staffRoutes(db) {
 
         const now = new Date().toISOString();
 
-        // Update report
-        db.prepare('UPDATE reports SET status = ?, updated_at = ? WHERE id = ?').run(newStatus, now, reportId);
+        // Update report (if transitioning to 'resolved', enter community verification window)
+        if (newStatus === 'resolved') {
+          const winHours = parseInt(db.prepare("SELECT value FROM app_settings WHERE key = 'verification_window_hours'").get()?.value || '72', 10);
+          const deadline = new Date(Date.now() + winHours * 3600000).toISOString().replace('T', ' ').substring(0, 19);
+          db.prepare("UPDATE reports SET status = ?, verification_state = 'awaiting', verification_deadline = ?, updated_at = ? WHERE id = ?")
+            .run(newStatus, deadline, now, reportId);
+        } else if (newStatus === 'reopened') {
+          db.prepare("UPDATE reports SET status = ?, verification_state = 'needs_followup', updated_at = ? WHERE id = ?")
+            .run(newStatus, now, reportId);
+        } else {
+          db.prepare('UPDATE reports SET status = ?, updated_at = ? WHERE id = ?').run(newStatus, now, reportId);
+        }
 
         // Create status history
         db.prepare(`
@@ -379,11 +411,26 @@ function staffRoutes(db) {
           VALUES (?, ?, 'status_change', 'report', ?, ?, ?, ?)
         `).run(generateUUID(), user.id, reportId, JSON.stringify({ status: report.status }), JSON.stringify({ status: newStatus, note }), now);
 
-        // Notify report owner
-        createNotification(db, report.user_id, reportId, 'status_change',
-          'Report Status Updated',
-          `Your report has been updated to: ${newStatus.replace('_', ' ').toUpperCase()}`
-        );
+        // Notify report owner (and supporters/upvoters when awaiting community verification)
+        if (newStatus === 'resolved') {
+          const interested = db.prepare(`
+            SELECT user_id FROM upvotes WHERE report_id = ?
+            UNION
+            SELECT user_id FROM report_supports WHERE report_id = ?
+          `).all(reportId, reportId);
+          const notifyIds = new Set([report.user_id, ...interested.map(x => x.user_id)]);
+          for (const uid of notifyIds) {
+            createNotification(db, uid, reportId, 'awaiting_verification',
+              'Report Resolved — Community Verification Open',
+              'A report you follow was marked Resolved and is awaiting community verification.'
+            );
+          }
+        } else {
+          createNotification(db, report.user_id, reportId, 'status_change',
+            'Report Status Updated',
+            `Your report has been updated to: ${newStatus.replace('_', ' ').toUpperCase()}`
+          );
+        }
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ message: 'Status updated', newStatus }));
@@ -948,6 +995,153 @@ function staffRoutes(db) {
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ message: 'Report resumed' }));
+    },
+
+    /**
+     * POST /api/staff/reports/:id/verification-decision
+     * Staff reviews community verification feedback and records a decision:
+     * 'confirm_resolved' | 'reopen' | 'close_with_explanation'
+     */
+    async verificationDecision(req, res, reportId) {
+      const user = requireStaff(db, req, res);
+      if (!user) return;
+
+      try {
+        const body = await readJsonBody(req);
+        const decision = String(body.decision || '').trim();
+        const explanation = sanitizeInput(body.explanation || '');
+
+        if (!['confirm_resolved', 'reopen', 'close_with_explanation'].includes(decision)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Decision must be confirm_resolved, reopen, or close_with_explanation' }));
+          return;
+        }
+
+        const report = db.prepare('SELECT id, report_number, user_id, status, verification_state FROM reports WHERE id = ?').get(reportId);
+        if (!report) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Report not found' }));
+          return;
+        }
+
+        if (decision === 'close_with_explanation' && (!explanation || explanation.length < 10)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Please provide an explanation (at least 10 characters) when closing with explanation' }));
+          return;
+        }
+
+        const now = new Date().toISOString();
+        let nextStatus = report.status;
+        let nextVerifState = report.verification_state;
+        let historyNote = explanation;
+
+        if (decision === 'confirm_resolved') {
+          nextStatus = 'resolved';
+          nextVerifState = 'verified_resolved';
+          historyNote = explanation || 'Staff reviewed community feedback and confirmed resolution.';
+          db.prepare('UPDATE reports SET status = ?, verification_state = ?, verified_at = ?, updated_at = ? WHERE id = ?')
+            .run(nextStatus, nextVerifState, now, now, reportId);
+        } else if (decision === 'reopen') {
+          nextStatus = 'reopened';
+          nextVerifState = 'needs_followup';
+          historyNote = explanation || 'Staff reopened report based on community verification feedback.';
+          db.prepare('UPDATE reports SET status = ?, verification_state = ?, updated_at = ? WHERE id = ?')
+            .run(nextStatus, nextVerifState, now, reportId);
+        } else if (decision === 'close_with_explanation') {
+          nextStatus = 'closed';
+          nextVerifState = 'closed_confirmed';
+          db.prepare('UPDATE reports SET status = ?, verification_state = ?, verified_at = ?, updated_at = ? WHERE id = ?')
+            .run(nextStatus, nextVerifState, now, now, reportId);
+        }
+
+        db.prepare(`
+          INSERT INTO status_history (id, report_id, old_status, new_status, changed_by, note, is_citizen_visible, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+        `).run(generateUUID(), reportId, report.status, nextStatus, user.id, historyNote, now);
+
+        if (explanation) {
+          db.prepare('INSERT INTO citizen_updates (id, report_id, user_id, content, created_at) VALUES (?, ?, ?, ?, ?)')
+            .run(generateUUID(), reportId, user.id, explanation, now);
+        }
+
+        db.prepare(`
+          INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, old_value, new_value, created_at)
+          VALUES (?, ?, 'verification_staff_decision', 'report', ?, ?, ?, ?)
+        `).run(
+          generateUUID(), user.id, reportId,
+          JSON.stringify({ status: report.status, verificationState: report.verification_state }),
+          JSON.stringify({ decision, status: nextStatus, verificationState: nextVerifState, explanation }),
+          now
+        );
+
+        const interested = db.prepare(`
+          SELECT user_id FROM upvotes WHERE report_id = ?
+          UNION
+          SELECT user_id FROM report_supports WHERE report_id = ?
+        `).all(reportId, reportId);
+        const notifyIds = new Set([report.user_id, ...interested.map(x => x.user_id)]);
+        for (const uid of notifyIds) {
+          createNotification(db, uid, reportId, 'verification_decision',
+            `Verification Review: ${report.report_number}`,
+            historyNote
+          );
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          message: 'Verification decision recorded',
+          status: nextStatus,
+          verificationState: nextVerifState
+        }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    },
+
+    /**
+     * POST /api/staff/verifications/check-expired
+     * Manual staff action to flag expired awaiting-verification reports for follow-up
+     */
+    checkExpiredVerifications(req, res) {
+      const user = requireStaff(db, req, res);
+      if (!user) return;
+
+      const nowIso = new Date().toISOString();
+      const nowSql = nowIso.replace('T', ' ').substring(0, 19);
+      const fixedThreshold = parseInt(db.prepare("SELECT value FROM app_settings WHERE key = 'verification_fixed_threshold'").get()?.value || '2', 10);
+
+      const expired = db.prepare(`
+        SELECT id, report_number, status FROM reports
+        WHERE status = 'resolved'
+          AND verification_state = 'awaiting'
+          AND verification_deadline IS NOT NULL
+          AND verification_deadline < ?
+      `).all(nowSql);
+
+      let flagged = 0;
+      for (const rep of expired) {
+        const fixedCount = db.prepare("SELECT COUNT(*) as c FROM resolution_verifications WHERE report_id = ? AND is_active = 1 AND vote = 'fixed'").get(rep.id).c;
+        if (fixedCount >= fixedThreshold) {
+          db.prepare("UPDATE reports SET verification_state = 'verified_resolved', verified_at = ?, updated_at = ? WHERE id = ?")
+            .run(nowIso, nowIso, rep.id);
+        } else {
+          db.prepare("UPDATE reports SET verification_state = 'needs_followup', updated_at = ? WHERE id = ?")
+            .run(nowIso, rep.id);
+          db.prepare(`
+            INSERT INTO status_history (id, report_id, old_status, new_status, changed_by, note, is_citizen_visible, created_at)
+            VALUES (?, ?, 'resolved', 'resolved', ?, ?, 1, ?)
+          `).run(generateUUID(), rep.id, user.id, 'Verification window expired without sufficient confirmation; flagged for staff follow-up.', nowIso);
+          db.prepare(`
+            INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, old_value, new_value, created_at)
+            VALUES (?, ?, 'verification_expired', 'report', ?, ?, ?, ?)
+          `).run(generateUUID(), user.id, rep.id, JSON.stringify({ verificationState: 'awaiting' }), JSON.stringify({ verificationState: 'needs_followup' }), nowIso);
+          flagged += 1;
+        }
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ checked: expired.length, flagged }));
     }
   };
 }

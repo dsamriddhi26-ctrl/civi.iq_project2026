@@ -17,6 +17,7 @@ function seedDatabase(db) {
   const existing = db.prepare('SELECT COUNT(*) AS cnt FROM departments').get();
   if (existing.cnt > 0) {
     seedAppReviews(db);
+    seedVerificationAndSupportData(db);
     return; // Already seeded
   }
 
@@ -444,6 +445,7 @@ function seedDatabase(db) {
     1, hoursAgo(500));
 
   seedAppReviews(db);
+  seedVerificationAndSupportData(db);
 }
 
 /**
@@ -492,6 +494,39 @@ function seedAppReviews(db) {
     'Being able to see community issues on the map and upvote urgent potholes in our neighborhood is super helpful.',
     hoursAgo(20)
   );
+}
+
+/**
+ * Seed verification settings, an awaiting-verification state on the resolved demo report,
+ * and an initial report support record (idempotent).
+ * @param {import('node:sqlite').DatabaseSync} db
+ */
+function seedVerificationAndSupportData(db) {
+  const ensureSetting = db.prepare('INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)');
+  ensureSetting.run('verification_window_hours', '72');
+  ensureSetting.run('verification_fixed_threshold', '2');
+  ensureSetting.run('verification_reopen_threshold', '2');
+
+  // Ensure the seeded resolved report (CIV-2026-00007) demonstrates awaiting community verification
+  const resolvedRep = db.prepare("SELECT id, verification_state FROM reports WHERE status = 'resolved' LIMIT 1").get();
+  if (resolvedRep && (!resolvedRep.verification_state || resolvedRep.verification_state === 'none')) {
+    const deadline = new Date(Date.now() + 72 * 3600000).toISOString().replace('T', ' ').substring(0, 19);
+    db.prepare("UPDATE reports SET verification_state = 'awaiting', verification_deadline = ? WHERE id = ?")
+      .run(deadline, resolvedRep.id);
+  }
+
+  // Ensure at least one seeded support record exists on an active report
+  const supportCount = db.prepare('SELECT COUNT(*) AS cnt FROM report_supports').get().cnt;
+  if (supportCount === 0) {
+    const rahul = db.prepare("SELECT id FROM users WHERE email = 'rahul@demo.civiq.local'").get();
+    const activeRep = db.prepare("SELECT id FROM reports WHERE report_number = 'CIV-2026-00001' LIMIT 1").get();
+    if (rahul && activeRep) {
+      db.prepare('INSERT OR IGNORE INTO report_supports (id, report_id, user_id) VALUES (?, ?, ?)')
+        .run(crypto.randomUUID(), activeRep.id, rahul.id);
+      db.prepare('UPDATE reports SET support_count = (SELECT COUNT(*) FROM report_supports WHERE report_id = ?) WHERE id = ?')
+        .run(activeRep.id, activeRep.id);
+    }
+  }
 }
 
 module.exports = { seedDatabase };

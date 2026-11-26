@@ -134,3 +134,21 @@ civ.iq/
 - **Port 3000 already in use:** Start with a custom port: `$env:PORT=3001; node server.js`
 - **Reset demo database:** Stop the server, delete `civiq.db` (and `-wal`/`-shm` files if present), and run `node server.js` again.
 - **Map tiles not loading:** Leaflet loads tiles from OpenStreetMap CDN (`unpkg.com` and `openstreetmap.org`); offline environments will still work with coordinates and manual address fallback.
+
+## Community Verification, Anti-Duplicate Support & Accessibility
+
+### 1. Community Resolution Verification
+- **Trigger:** When municipal staff mark a report as `resolved`, `verification_state` becomes `awaiting` with a configurable deadline (`verification_window_hours`, default `72` hours in `app_settings`). The original reporter and any citizens who upvoted or supported the report receive an in-app notification.
+- **Eligibility Rule (enforced server-side):** Only authenticated `citizen` accounts who are **not** the report owner (`user.id !== report.user_id`) may vote while `status === 'resolved'` and `verification_state === 'awaiting'`. Staff, admins, and report owners are blocked (`403`). One active vote per citizen per report is enforced via `idx_res_verif_active` in SQLite (`409` on duplicate vote).
+- **Thresholds & Evaluation:** Configurable in `app_settings` (`verification_fixed_threshold = 2`, `verification_reopen_threshold = 2`). Reaching the fixed threshold sets `verification_state = 'verified_resolved'`; reaching the still-present threshold reopens the report (`status = 'reopened'`, `verification_state = 'needs_followup'`) and notifies staff.
+- **Staff Review & Expiry Limitation:** Because this MVP runs without a background job scheduler, expired verification windows are evaluated on demand via `POST /api/staff/verifications/check-expired` rather than a background cron. Staff can also record an explicit decision (`confirm_resolved`, `reopen`, or `close_with_explanation`) on any report in `#/staff/report/:id`.
+
+### 2. Support an Existing Report Instead of Duplicating It
+- **Separate from Upvotes:** `report_supports` (`POST` / `DELETE /api/reports/:id/support`) tracks citizens experiencing the same issue so they can support an active report instead of filing a duplicate, while `upvotes` remains for community priority voting.
+- **Rules:** Enforces one active support per citizen per report (`UNIQUE(report_id, user_id)`). Resolved or closed reports cannot receive new support (`400`) and direct citizens to community verification instead. Reports are never auto-merged or deleted; staff review duplicate suggestions manually.
+
+### 3. Accessibility & Language Options
+- **Language Selector & Simple-Language Mode:** Available in the header (`public/js/i18n.js`). Includes **English (`en`)** and a clearly labeled demonstration **Hindi (`hi`)** translation, plus a **Simple words** toggle for shorter, clearer citizen wording.
+- **Persistence:** Saved in `localStorage` (`civiq_lang`, `civiq_simple_lang`).
+- **Adding Languages:** Add a new key under `STRINGS` (and optionally `SIMPLE_OVERRIDES`) in `public/js/i18n.js` and add the `<option>` to `#lang-select` in `public/index.html`.
+- **Content Policy:** User-submitted descriptions, comments, and staff notes are never auto-translated and are displayed in their original language.

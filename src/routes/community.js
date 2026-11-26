@@ -74,6 +74,7 @@ function communityRoutes(db) {
       const reports = db.prepare(`
         SELECT r.id, r.report_number, r.category, r.description, r.status, r.priority,
                r.latitude, r.longitude, r.address, r.is_anonymous, r.upvote_count,
+               r.support_count, r.verification_state,
                r.image_path, r.created_at, r.updated_at,
                d.name as department_name,
                u.display_name as reporter_name, u.alias as reporter_alias
@@ -110,6 +111,8 @@ function communityRoutes(db) {
           departmentName: r.department_name,
           upvoteCount: r.upvote_count,
           userUpvoted: userUpvotes.has(r.id),
+          supportCount: r.support_count || 0,
+          verificationState: r.verification_state || 'none',
           imagePath: r.image_path ? `/uploads/${r.image_path}` : null,
           createdAt: r.created_at,
           updatedAt: r.updated_at

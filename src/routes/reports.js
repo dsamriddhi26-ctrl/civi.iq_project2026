@@ -223,12 +223,40 @@ function reportRoutes(db) {
         ORDER BY cu.created_at DESC
       `).all(reportId);
 
-      // Get upvote count and whether current user has upvoted
+      // Get upvote & support counts and whether current user has upvoted/supported
       const upvoteCount = db.prepare('SELECT COUNT(*) as count FROM upvotes WHERE report_id = ?').get(reportId).count;
+      const supportCount = db.prepare('SELECT COUNT(*) as count FROM report_supports WHERE report_id = ?').get(reportId).count;
       let userUpvoted = false;
+      let userSupported = false;
+      let userVerificationVote = null;
       if (user) {
         userUpvoted = !!db.prepare('SELECT 1 FROM upvotes WHERE report_id = ? AND user_id = ?').get(reportId, user.id);
+        userSupported = !!db.prepare('SELECT 1 FROM report_supports WHERE report_id = ? AND user_id = ?').get(reportId, user.id);
+        const uv = db.prepare('SELECT vote FROM resolution_verifications WHERE report_id = ? AND user_id = ? AND is_active = 1').get(reportId, user.id);
+        if (uv) userVerificationVote = uv.vote;
       }
+
+      // Community resolution verification summary & public feedback (no private user info)
+      const verifRows = db.prepare(`
+        SELECT rv.id, rv.vote, rv.comment, rv.image_path, rv.created_at,
+               u.alias as verifier_alias
+        FROM resolution_verifications rv
+        LEFT JOIN users u ON rv.user_id = u.id
+        WHERE rv.report_id = ? AND rv.is_active = 1
+        ORDER BY rv.created_at DESC
+      `).all(reportId);
+      const fixedCount = verifRows.filter(v => v.vote === 'fixed').length;
+      const stillPresentCount = verifRows.filter(v => v.vote === 'still_present').length;
+      const fixedThreshold = parseInt(db.prepare("SELECT value FROM app_settings WHERE key = 'verification_fixed_threshold'").get()?.value || '2', 10);
+      const reopenThreshold = parseInt(db.prepare("SELECT value FROM app_settings WHERE key = 'verification_reopen_threshold'").get()?.value || '2', 10);
+      const canUserVerify = !!(
+        user &&
+        user.role === 'citizen' &&
+        user.id !== report.user_id &&
+        report.status === 'resolved' &&
+        report.verification_state === 'awaiting' &&
+        !userVerificationVote
+      );
 
       // Get duplicate suggestions (public — only confirmed ones for citizens)
       let duplicates = [];
@@ -260,6 +288,27 @@ function reportRoutes(db) {
         classificationSource: report.classification_source,
         upvoteCount,
         userUpvoted,
+        supportCount,
+        userSupported,
+        verification: {
+          state: report.verification_state || 'none',
+          deadline: report.verification_deadline || null,
+          verifiedAt: report.verified_at || null,
+          fixedCount,
+          stillPresentCount,
+          fixedThreshold,
+          reopenThreshold,
+          userVote: userVerificationVote,
+          canVerify: canUserVerify,
+          entries: verifRows.map(v => ({
+            id: v.id,
+            vote: v.vote,
+            comment: v.comment,
+            imagePath: v.image_path ? `/uploads/${v.image_path}` : null,
+            author: v.verifier_alias || 'Verified Citizen',
+            createdAt: v.created_at
+          }))
+        },
         isPaused: !!report.is_paused,
         pausedReason: report.paused_reason,
         slaDeadline: report.sla_deadline,
@@ -384,7 +433,9 @@ function reportRoutes(db) {
           reportNumber: d.reportNumber,
           description: d.description,
           category: d.category,
+          address: d.address || null,
           status: d.status,
+          supportCount: d.support_count || 0,
           distance: Math.round(d.distance_meters),
           score: Math.round(d.similarity_score * 100) / 100,
           source: 'rules_engine'
@@ -428,6 +479,228 @@ function reportRoutes(db) {
         const newCount = db.prepare('SELECT upvote_count FROM reports WHERE id = ?').get(reportId).upvote_count;
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ upvoted: true, upvoteCount: newCount }));
+      }
+    },
+
+    /**
+     * POST /api/reports/:id/support
+     * Support an active existing report instead of filing a duplicate
+     */
+    addSupport(req, res, reportId) {
+      const user = requireAuth(db, req, res);
+      if (!user) return;
+
+      if (user.role !== 'citizen') {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Only citizens can add report support' }));
+        return;
+      }
+
+      const report = db.prepare('SELECT id, status, verification_state FROM reports WHERE id = ?').get(reportId);
+      if (!report) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Report not found' }));
+        return;
+      }
+
+      if (['resolved', 'closed'].includes(report.status)) {
+        const alt = report.verification_state === 'awaiting'
+          ? 'You can submit community verification feedback instead.'
+          : 'Please file a new report if the issue has returned.';
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: `This report is already ${report.status} and cannot receive new support. ${alt}`
+        }));
+        return;
+      }
+
+      const existing = db.prepare('SELECT id FROM report_supports WHERE report_id = ? AND user_id = ?').get(reportId, user.id);
+      if (existing) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'You are already supporting this report' }));
+        return;
+      }
+
+      const now = new Date().toISOString();
+      db.prepare('INSERT INTO report_supports (id, report_id, user_id, created_at) VALUES (?, ?, ?, ?)')
+        .run(generateUUID(), reportId, user.id, now);
+      db.prepare('UPDATE reports SET support_count = (SELECT COUNT(*) FROM report_supports WHERE report_id = ?) WHERE id = ?')
+        .run(reportId, reportId);
+      db.prepare(`
+        INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, new_value, created_at)
+        VALUES (?, ?, 'add_support', 'report', ?, ?, ?)
+      `).run(generateUUID(), user.id, reportId, JSON.stringify({ supported: true }), now);
+
+      const newCount = db.prepare('SELECT support_count FROM reports WHERE id = ?').get(reportId).support_count;
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ supported: true, supportCount: newCount }));
+    },
+
+    /**
+     * DELETE /api/reports/:id/support
+     * Remove citizen support from an active report
+     */
+    removeSupport(req, res, reportId) {
+      const user = requireAuth(db, req, res);
+      if (!user) return;
+
+      const report = db.prepare('SELECT id, status FROM reports WHERE id = ?').get(reportId);
+      if (!report) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Report not found' }));
+        return;
+      }
+
+      if (['resolved', 'closed'].includes(report.status)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Cannot remove support from a ${report.status} report` }));
+        return;
+      }
+
+      const existing = db.prepare('SELECT id FROM report_supports WHERE report_id = ? AND user_id = ?').get(reportId, user.id);
+      if (!existing) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Support record not found' }));
+        return;
+      }
+
+      const now = new Date().toISOString();
+      db.prepare('DELETE FROM report_supports WHERE id = ?').run(existing.id);
+      db.prepare('UPDATE reports SET support_count = (SELECT COUNT(*) FROM report_supports WHERE report_id = ?) WHERE id = ?')
+        .run(reportId, reportId);
+      db.prepare(`
+        INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, old_value, new_value, created_at)
+        VALUES (?, ?, 'remove_support', 'report', ?, ?, ?, ?)
+      `).run(generateUUID(), user.id, reportId, JSON.stringify({ supported: true }), JSON.stringify({ supported: false }), now);
+
+      const newCount = db.prepare('SELECT support_count FROM reports WHERE id = ?').get(reportId).support_count;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ supported: false, supportCount: newCount }));
+    },
+
+    /**
+     * POST /api/reports/:id/verify
+     * Submit a community resolution verification vote ('fixed' or 'still_present')
+     * Eligibility: authenticated citizen, not report owner, report is resolved & awaiting verification, 1 active vote max.
+     */
+    async submitVerification(req, res, reportId) {
+      const user = requireAuth(db, req, res);
+      if (!user) return;
+
+      if (user.role !== 'citizen') {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Only independent citizens can submit community verification votes' }));
+        return;
+      }
+
+      try {
+        const { fields, file } = await parseMultipart(req);
+        const vote = String(fields.vote || '').trim().toLowerCase();
+        const comment = sanitizeInput(fields.comment || '');
+
+        if (!['fixed', 'still_present'].includes(vote)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Vote must be "fixed" or "still_present"' }));
+          return;
+        }
+
+        const report = db.prepare('SELECT id, report_number, user_id, status, verification_state FROM reports WHERE id = ?').get(reportId);
+        if (!report) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Report not found' }));
+          return;
+        }
+
+        if (report.user_id === user.id) {
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Report owners cannot vote on their own community verification' }));
+          return;
+        }
+
+        if (report.status !== 'resolved' || report.verification_state !== 'awaiting') {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'This report is not currently awaiting community verification' }));
+          return;
+        }
+
+        const existingVote = db.prepare(
+          'SELECT id FROM resolution_verifications WHERE report_id = ? AND user_id = ? AND is_active = 1'
+        ).get(reportId, user.id);
+        if (existingVote) {
+          res.writeHead(409, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'You have already submitted an active verification vote for this report' }));
+          return;
+        }
+
+        const now = new Date().toISOString();
+        const verifId = generateUUID();
+
+        db.prepare(`
+          INSERT INTO resolution_verifications (id, report_id, user_id, vote, comment, image_path, is_active, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+        `).run(verifId, reportId, user.id, vote, comment || null, file ? file.savedName : null, now);
+
+        db.prepare(`
+          INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, new_value, created_at)
+          VALUES (?, ?, 'community_verification_vote', 'report', ?, ?, ?)
+        `).run(generateUUID(), user.id, reportId, JSON.stringify({ vote, hasComment: !!comment, hasPhoto: !!file }), now);
+
+        // Evaluate thresholds
+        const fixedCount = db.prepare("SELECT COUNT(*) as c FROM resolution_verifications WHERE report_id = ? AND is_active = 1 AND vote = 'fixed'").get(reportId).c;
+        const stillPresentCount = db.prepare("SELECT COUNT(*) as c FROM resolution_verifications WHERE report_id = ? AND is_active = 1 AND vote = 'still_present'").get(reportId).c;
+        const fixedThreshold = parseInt(db.prepare("SELECT value FROM app_settings WHERE key = 'verification_fixed_threshold'").get()?.value || '2', 10);
+        const reopenThreshold = parseInt(db.prepare("SELECT value FROM app_settings WHERE key = 'verification_reopen_threshold'").get()?.value || '2', 10);
+
+        let newVerificationState = report.verification_state;
+        let newStatus = report.status;
+
+        if (fixedCount >= fixedThreshold) {
+          newVerificationState = 'verified_resolved';
+          db.prepare('UPDATE reports SET verification_state = ?, verified_at = ?, updated_at = ? WHERE id = ?')
+            .run(newVerificationState, now, now, reportId);
+          db.prepare(`
+            INSERT INTO status_history (id, report_id, old_status, new_status, changed_by, note, is_citizen_visible, created_at)
+            VALUES (?, ?, 'resolved', 'resolved', ?, ?, 1, ?)
+          `).run(generateUUID(), reportId, user.id, `Community verified resolved (${fixedCount} confirmations)`, now);
+          db.prepare(`
+            INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, old_value, new_value, created_at)
+            VALUES (?, ?, 'verification_threshold_met', 'report', ?, ?, ?, ?)
+          `).run(generateUUID(), user.id, reportId, JSON.stringify({ verificationState: 'awaiting' }), JSON.stringify({ verificationState: 'verified_resolved', fixedCount }), now);
+        } else if (stillPresentCount >= reopenThreshold) {
+          newVerificationState = 'needs_followup';
+          newStatus = 'reopened';
+          db.prepare('UPDATE reports SET status = ?, verification_state = ?, updated_at = ? WHERE id = ?')
+            .run(newStatus, newVerificationState, now, reportId);
+          db.prepare(`
+            INSERT INTO status_history (id, report_id, old_status, new_status, changed_by, note, is_citizen_visible, created_at)
+            VALUES (?, ?, 'resolved', 'reopened', ?, ?, 1, ?)
+          `).run(generateUUID(), reportId, user.id, `Reopened after ${stillPresentCount} community reports that the issue is still present`, now);
+          db.prepare(`
+            INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, old_value, new_value, created_at)
+            VALUES (?, ?, 'verification_reopened', 'report', ?, ?, ?, ?)
+          `).run(generateUUID(), user.id, reportId, JSON.stringify({ status: 'resolved' }), JSON.stringify({ status: 'reopened', stillPresentCount }), now);
+
+          const staffUsers = db.prepare("SELECT id FROM users WHERE role IN ('staff', 'admin')").all();
+          for (const s of staffUsers) {
+            createNotification(db, s.id, reportId, 'verification_followup',
+              `Follow-up Needed: ${report.report_number}`,
+              `Community verification reported that ${report.report_number} is still present and it has been reopened.`
+            );
+          }
+        }
+
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          message: 'Verification vote recorded',
+          vote,
+          verificationState: newVerificationState,
+          status: newStatus,
+          fixedCount,
+          stillPresentCount
+        }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
       }
     }
   };

@@ -114,10 +114,29 @@ function initDatabase(dbPath) {
       paused_at                 TEXT,
       paused_reason             TEXT,
       upvote_count              INTEGER DEFAULT 0,
+      support_count             INTEGER DEFAULT 0,
+      verification_state        TEXT DEFAULT 'none' CHECK(verification_state IN ('none','awaiting','verified_resolved','needs_followup','closed_confirmed')),
+      verification_deadline     TEXT,
+      verified_at               TEXT,
       created_at                TEXT DEFAULT (datetime('now')),
       updated_at                TEXT DEFAULT (datetime('now'))
     )
   `);
+
+  // Backward-compatible migrations for existing reports table
+  const reportCols = db.prepare('PRAGMA table_info(reports)').all();
+  if (!reportCols.some(c => c.name === 'support_count')) {
+    db.exec('ALTER TABLE reports ADD COLUMN support_count INTEGER DEFAULT 0');
+  }
+  if (!reportCols.some(c => c.name === 'verification_state')) {
+    db.exec("ALTER TABLE reports ADD COLUMN verification_state TEXT DEFAULT 'none'");
+  }
+  if (!reportCols.some(c => c.name === 'verification_deadline')) {
+    db.exec('ALTER TABLE reports ADD COLUMN verification_deadline TEXT');
+  }
+  if (!reportCols.some(c => c.name === 'verified_at')) {
+    db.exec('ALTER TABLE reports ADD COLUMN verified_at TEXT');
+  }
 
   // ─── Status History ──────────────────────────────────────────────────────
   db.exec(`
@@ -271,6 +290,31 @@ function initDatabase(dbPath) {
     )
   `);
 
+  // ─── Report Supports (Anti-Duplicate Support) ────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS report_supports (
+      id              TEXT PRIMARY KEY,
+      report_id       TEXT NOT NULL REFERENCES reports(id),
+      user_id         TEXT NOT NULL REFERENCES users(id),
+      created_at      TEXT DEFAULT (datetime('now')),
+      UNIQUE(report_id, user_id)
+    )
+  `);
+
+  // ─── Community Resolution Verifications ──────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS resolution_verifications (
+      id              TEXT PRIMARY KEY,
+      report_id       TEXT NOT NULL REFERENCES reports(id),
+      user_id         TEXT NOT NULL REFERENCES users(id),
+      vote            TEXT NOT NULL CHECK(vote IN ('fixed','still_present')),
+      comment         TEXT,
+      image_path      TEXT,
+      is_active       INTEGER DEFAULT 1,
+      created_at      TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   // ─── Indexes ─────────────────────────────────────────────────────────────
   // Reports indexes for common query patterns
   db.exec(`CREATE INDEX IF NOT EXISTS idx_reports_user_id       ON reports(user_id)`);
@@ -295,6 +339,12 @@ function initDatabase(dbPath) {
 
   // App reviews lookups
   db.exec(`CREATE INDEX IF NOT EXISTS idx_app_reviews_created_at ON app_reviews(created_at)`);
+
+  // Support & verification lookups + unique active verification per citizen per report
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_report_supports_report ON report_supports(report_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_report_supports_user   ON report_supports(user_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_res_verif_report       ON resolution_verifications(report_id)`);
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_res_verif_active ON resolution_verifications(report_id, user_id) WHERE is_active = 1`);
 
   return db;
 }

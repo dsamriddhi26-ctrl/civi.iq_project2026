@@ -106,6 +106,10 @@ window.CivIQ.ReportCard = function ReportCard(report) {
           <span aria-hidden="true">·</span>
           <span>${timeStr}</span>
           ${report.department ? `<span aria-hidden="true">·</span><span>${esc(report.department)}</span>` : ''}
+          <span aria-hidden="true">·</span>
+          <span title="Citizens supporting this report">🤝 ${report.supportCount || 0}</span>
+          ${report.verificationState === 'awaiting' ? '<span class="badge badge-warning">⏳ Verify</span>' : ''}
+          ${report.verificationState === 'verified_resolved' ? '<span class="badge badge-resolved">✅ Verified</span>' : ''}
         </div>
         <button class="upvote-btn ${report.hasUpvoted ? 'upvoted' : ''}"
                 data-upvote-id="${esc(report.id)}"

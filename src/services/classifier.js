@@ -257,7 +257,7 @@ function getDuplicateSuggestions(db, lat, lng, category, description, excludeRep
   let candidates;
   if (excludeReportId) {
     candidates = db.prepare(
-      `SELECT id, report_number, category, description, latitude, longitude, status, address
+      `SELECT id, report_number, category, description, latitude, longitude, status, address, support_count
        FROM reports
        WHERE id != ?
          AND status NOT IN ('closed')
@@ -267,7 +267,7 @@ function getDuplicateSuggestions(db, lat, lng, category, description, excludeRep
     ).all(excludeReportId);
   } else {
     candidates = db.prepare(
-      `SELECT id, report_number, category, description, latitude, longitude, status, address
+      `SELECT id, report_number, category, description, latitude, longitude, status, address, support_count
        FROM reports
        WHERE status NOT IN ('closed')
          AND is_duplicate = 0
@@ -321,6 +321,7 @@ function getDuplicateSuggestions(db, lat, lng, category, description, excludeRep
         description: candidate.description,
         address: candidate.address,
         status: candidate.status,
+        support_count: candidate.support_count || 0,
         distance_meters: distanceMeters !== null ? Math.round(distanceMeters) : null,
         similarity_score: parseFloat(combinedScore.toFixed(4)),
         source: 'rules_engine'

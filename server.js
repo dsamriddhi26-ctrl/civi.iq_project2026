@@ -226,6 +226,19 @@ function createAppServer(dbPath = DB_PATH) {
           return reports.toggleUpvote(req, res, decodeURIComponent(match[1]));
         }
 
+        match = pathname.match(/^\/api\/reports\/([^/]+)\/support$/);
+        if (method === 'POST' && match) {
+          return reports.addSupport(req, res, decodeURIComponent(match[1]));
+        }
+        if (method === 'DELETE' && match) {
+          return reports.removeSupport(req, res, decodeURIComponent(match[1]));
+        }
+
+        match = pathname.match(/^\/api\/reports\/([^/]+)\/verify$/);
+        if (method === 'POST' && match) {
+          return await reports.submitVerification(req, res, decodeURIComponent(match[1]));
+        }
+
         match = pathname.match(/^\/api\/reports\/([^/]+)$/);
         if (method === 'GET' && match) {
           return reports.getReport(req, res, decodeURIComponent(match[1]));
@@ -271,6 +284,9 @@ function createAppServer(dbPath = DB_PATH) {
         }
         if (method === 'POST' && pathname === '/api/staff/escalations/check') {
           return staff.runEscalationCheck(req, res);
+        }
+        if (method === 'POST' && pathname === '/api/staff/verifications/check-expired') {
+          return staff.checkExpiredVerifications(req, res);
         }
         if (method === 'GET' && pathname === '/api/staff/reports') {
           return staff.getAllReports(req, res);
@@ -319,6 +335,11 @@ function createAppServer(dbPath = DB_PATH) {
         match = pathname.match(/^\/api\/staff\/reports\/([^/]+)\/resume$/);
         if (method === 'PUT' && match) {
           return await staff.resumeReport(req, res, decodeURIComponent(match[1]));
+        }
+
+        match = pathname.match(/^\/api\/staff\/reports\/([^/]+)\/verification-decision$/);
+        if (method === 'POST' && match) {
+          return await staff.verificationDecision(req, res, decodeURIComponent(match[1]));
         }
 
         // Admin

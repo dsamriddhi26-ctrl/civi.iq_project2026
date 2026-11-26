@@ -107,24 +107,36 @@
 
   // ─── Format & Display Helpers ──────────────────────────────────────────────
 
+  const tr = (key) => (window.CivIQI18n ? window.CivIQI18n.t(key) : key);
+
   function catLabel(cat) {
+    if (window.CivIQI18n) return window.CivIQI18n.catLabel(cat);
     return CATEGORY_LABELS[cat] || cat || 'Other';
   }
 
   function statusLabel(st) {
+    if (window.CivIQI18n) return window.CivIQI18n.statusLabel(st);
     return STATUS_LABELS[st] || st || 'Submitted';
   }
 
   function priorityLabel(pr) {
+    if (window.CivIQI18n) return window.CivIQI18n.priorityLabel(pr);
     return PRIORITY_LABELS[pr] || pr || 'Medium';
   }
 
   function statusBadge(st) {
-    return C.renderStatusBadge ? C.renderStatusBadge(statusLabel(st)) : esc(statusLabel(st));
+    const icons = {
+      submitted: '📥', under_review: '🔍', assigned: '👷',
+      in_progress: '🔧', resolved: '✅', closed: '🔒', reopened: '🔄'
+    };
+    const cls = `badge badge-${String(st || 'submitted').replace('_', '-')}`;
+    return `<span class="${cls}">${icons[st] || '•'} ${esc(statusLabel(st))}</span>`;
   }
 
   function priorityBadge(pr) {
-    return C.renderPriorityBadge ? C.renderPriorityBadge(priorityLabel(pr)) : esc(priorityLabel(pr));
+    const icons = { critical: '🔴', medium: '🟡', low: '🟢' };
+    const cls = `badge badge-${esc(pr || 'medium')}`;
+    return `<span class="${cls}">${icons[pr] || '•'} ${esc(priorityLabel(pr))}</span>`;
   }
 
   function formatDate(iso) {
@@ -587,28 +599,29 @@
     const role = state.user ? state.user.role : null;
 
     const links = [
-      { href: '#/home', label: 'Home' },
-      { href: '#/report/new', label: 'Report Issue' },
-      ...(state.user ? [{ href: '#/my-reports', label: 'My Reports' }] : []),
-      { href: '#/community', label: 'Community' },
-      { href: '#/leaderboard', label: 'Leaderboard' },
-      { href: '#/reviews', label: 'Reviews' }
+      { href: '#/home', label: tr('nav_home') },
+      { href: '#/report/new', label: tr('nav_report') },
+      ...(state.user ? [{ href: '#/my-reports', label: tr('nav_my_reports') }] : []),
+      { href: '#/community', label: tr('nav_community') },
+      { href: '#/leaderboard', label: tr('nav_leaderboard') },
+      { href: '#/reviews', label: tr('nav_reviews') },
+      { href: '#/game', label: tr('nav_game') }
     ];
 
     if (role === 'staff' || role === 'admin') {
       links.push(
-        { href: '#/staff/dashboard', label: 'Dashboard' },
-        { href: '#/staff/reports', label: 'Staff Queue' },
-        { href: '#/staff/escalations', label: 'Escalations' }
+        { href: '#/staff/dashboard', label: tr('nav_dashboard') },
+        { href: '#/staff/reports', label: tr('nav_queue') },
+        { href: '#/staff/escalations', label: tr('nav_escalations') }
       );
     }
 
     if (role === 'admin') {
       links.push(
-        { href: '#/admin/departments', label: 'Departments' },
-        { href: '#/admin/sla', label: 'SLA' },
-        { href: '#/admin/users', label: 'Users' },
-        { href: '#/admin/settings', label: 'Settings' }
+        { href: '#/admin/departments', label: tr('nav_departments') },
+        { href: '#/admin/sla', label: tr('nav_sla') },
+        { href: '#/admin/users', label: tr('nav_users') },
+        { href: '#/admin/settings', label: tr('nav_settings') }
       );
     }
 
@@ -726,6 +739,10 @@
         await renderLeaderboardPage(app);
       } else if (path === '/reviews') {
         await renderReviewsPage(app);
+      } else if (path === '/game') {
+        if (window.CivIQGame && window.CivIQGame.renderGamePage) {
+          window.CivIQGame.renderGamePage(app);
+        }
       } else if (path === '/staff/dashboard') {
         await renderStaffDashboardPage(app);
       } else if (path === '/staff/reports') {
@@ -796,6 +813,60 @@
     `;
   }
 
+  // ─── Dream City SVG Illustration ───────────────────────────────────────────
+
+  function renderDreamCitySvg() {
+    return `
+      <svg class="dream-city-svg" viewBox="0 0 420 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dream City clean green community illustration">
+        <defs>
+          <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#c9e4de"/>
+            <stop offset="100%" stop-color="#eaf5ef"/>
+          </linearGradient>
+        </defs>
+        <rect width="420" height="270" rx="14" fill="url(#skyGrad)"/>
+        <!-- Sun -->
+        <circle cx="348" cy="54" r="24" fill="#f4b426"/>
+        <circle cx="348" cy="54" r="32" fill="#f4b426" opacity="0.22"/>
+        <!-- Clouds -->
+        <ellipse cx="92" cy="48" rx="28" ry="11" fill="#fff" opacity="0.88"/>
+        <ellipse cx="220" cy="40" rx="22" ry="9" fill="#fff" opacity="0.85"/>
+        <!-- City skyline -->
+        <rect x="235" y="102" width="38" height="90" rx="3" fill="#4f7c6b"/>
+        <rect x="278" y="84" width="44" height="108" rx="3" fill="#14533c"/>
+        <rect x="328" y="112" width="36" height="80" rx="3" fill="#e69d17" opacity="0.88"/>
+        <rect x="288" y="96" width="8" height="10" fill="#eaf5ef"/><rect x="304" y="96" width="8" height="10" fill="#eaf5ef"/>
+        <rect x="288" y="114" width="8" height="10" fill="#eaf5ef"/><rect x="304" y="114" width="8" height="10" fill="#eaf5ef"/>
+        <rect x="245" y="114" width="7" height="9" fill="#eaf5ef"/><rect x="257" y="114" width="7" height="9" fill="#eaf5ef"/>
+        <!-- Wind turbines -->
+        <rect x="86" y="74" width="5" height="92" fill="#fff"/>
+        <circle cx="88.5" cy="74" r="4" fill="#14533c"/>
+        <path d="M88.5 74 L68 50 L74 46 Z M88.5 74 L116 70 L114 77 Z M88.5 74 L76 104 L70 100 Z" fill="#fff"/>
+        <rect x="148" y="88" width="4" height="78" fill="#fff"/>
+        <circle cx="150" cy="88" r="3.5" fill="#14533c"/>
+        <path d="M150 88 L134 68 L139 65 Z M150 88 L173 85 L171 91 Z M150 88 L139 112 L134 109 Z" fill="#fff"/>
+        <!-- Rolling green hills -->
+        <path d="M0 185 Q110 142 225 182 T420 170 L420 270 L0 270 Z" fill="#2d7a53"/>
+        <path d="M0 205 Q140 175 270 205 T420 198 L420 270 L0 270 Z" fill="#1b6b4a"/>
+        <!-- Pathway -->
+        <path d="M40 270 Q175 220 295 210 L330 214 Q210 232 105 270 Z" fill="#f5f8f5" opacity="0.9"/>
+        <!-- Trees -->
+        <rect x="44" y="176" width="6" height="24" fill="#5d4037"/>
+        <circle cx="47" cy="166" r="18" fill="#14533c"/>
+        <rect x="188" y="164" width="6" height="24" fill="#5d4037"/>
+        <circle cx="191" cy="154" r="17" fill="#35a074"/>
+        <!-- Green Civic Bin & Solar House -->
+        <rect x="96" y="160" width="44" height="34" rx="2" fill="#f4b426"/>
+        <polygon points="91,160 118,140 145,160" fill="#8d4e2a"/>
+        <rect x="112" y="172" width="12" height="22" fill="#14533c"/>
+        <rect x="348" y="196" width="22" height="28" rx="3" fill="#27ae60"/>
+        <rect x="346" y="192" width="26" height="5" rx="2" fill="#14533c"/>
+        <!-- Pin marker badge -->
+        <circle cx="232" cy="196" r="10" fill="#f4b426" stroke="#fff" stroke-width="2.5"/>
+      </svg>
+    `;
+  }
+
   // ─── 0. AuthPage (First Screen: Role Selection + Login / Signup) ───────────
 
   function renderAuthPage(app) {
@@ -812,12 +883,35 @@
       const demoForRole = (state.demoUsers || []).filter(u => u.role === selectedRole);
 
       app.innerHTML = `
-        <section class="card auth-card">
-          <div class="card-header">
-            <h1>Welcome to Civ.IQ</h1>
-            <p class="text-sm text-muted">Select your role, then sign up or log in using your email or phone number.</p>
-          </div>
-          <div class="card-body">
+        <div class="auth-split">
+          <aside class="auth-poster">
+            <div class="auth-poster-top">
+              <span class="poster-kicker">Civic Sense · Day by Day</span>
+              <h2>Build Your Dream City Together</h2>
+              <p class="text-sm text-muted">Report potholes, waste, streetlights, and drainage issues in under 60 seconds.</p>
+              <span class="poster-tagline">It&rsquo;s not that tough &mdash; start with your street</span>
+            </div>
+            <div class="mt-md">
+              ${renderDreamCitySvg()}
+            </div>
+            <div class="auth-poster-bottom">
+              <strong>Every report moves your neighborhood forward.</strong>
+              <div class="civic-pills">
+                <span class="civic-pill">📍 Geo-tagged Issues</span>
+                <span class="civic-pill">🔥 Live Heatmaps</span>
+                <span class="civic-pill">⭐ Verified Reviews</span>
+              </div>
+            </div>
+          </aside>
+
+          <section class="card auth-card">
+            <div class="card-header">
+              <div>
+                <h1>Welcome to Civ.IQ</h1>
+                <p class="text-sm text-muted">Select your role, then sign up or log in using your email or phone number.</p>
+              </div>
+            </div>
+            <div class="card-body">
             <div class="emergency-banner mb-md">
               <strong>⚠️ Local Demo Authentication:</strong> Accounts created here are stored in the local SQLite database for development/demo use (no real SMS OTP or email verification is sent).
             </div>
@@ -878,7 +972,8 @@
               <a href="#/community" class="text-sm">Browse Public Community Feed &amp; Heatmap as Guest &rarr;</a>
             </div>
           </div>
-        </section>
+          </section>
+        </div>
       `;
 
       app.querySelectorAll('.role-option').forEach(btn => {
@@ -955,22 +1050,31 @@
     }
 
     app.innerHTML = `
-      <section class="hero card mb-lg">
-        <h1>Report civic issues. Track resolution. Build a better community.</h1>
-        <p class="text-muted mb-lg">
-          Civ.IQ connects residents with municipal departments to report potholes, waste,
-          streetlights, drainage, and stray animal issues with transparent tracking.
-        </p>
-        <div class="flex gap-md flex-wrap justify-center">
-          <a href="#/report/new" class="btn btn-primary btn-lg">Report an Issue</a>
-          <a href="#/community" class="btn btn-secondary btn-lg">Browse Community Reports</a>
+      <section class="hero-dream-city mb-lg">
+        <div>
+          <span class="poster-kicker">Dream City · Civic Sense Day by Day</span>
+          <h1>${esc(tr('hero_title'))}</h1>
+          <p class="text-muted mb-md">${esc(tr('hero_desc'))}</p>
+          <div class="hero-pills">
+            <span class="hero-pill-tag">📍 Geo-tagged Photos</span>
+            <span class="hero-pill-tag">🔥 Live Density Heatmap</span>
+            <span class="hero-pill-tag">✅ Transparent SLA Tracking</span>
+          </div>
+          <div class="flex gap-sm flex-wrap">
+            <a href="#/report/new" class="btn btn-primary btn-lg">${esc(tr('btn_report_issue'))}</a>
+            <a href="#/community" class="btn btn-secondary btn-lg">${esc(tr('btn_community_map'))}</a>
+            <a href="#/game" class="btn btn-secondary btn-lg">${esc(tr('btn_civic_game'))}</a>
+            <a href="#/reviews" class="btn btn-ghost btn-lg">${esc(tr('btn_reviews'))}</a>
+          </div>
+        </div>
+        <div>
+          ${renderDreamCitySvg()}
         </div>
       </section>
 
       <div class="emergency-banner mb-lg" role="note">
-        <strong>⚠️ Not an Emergency Service:</strong>
-        Civ.IQ is for non-emergency civic maintenance only. For immediate life-safety, fire,
-        medical, or crime emergencies, dial your local emergency number (e.g., 112 / 100).
+        <strong>${esc(tr('emergency_title'))}</strong>
+        ${esc(tr('emergency_body'))}
       </div>
 
       <section class="grid grid-3 mb-xl">
@@ -1056,67 +1160,64 @@
 
     const stepIndicator = `
       <div class="flex gap-sm mb-lg flex-wrap" aria-label="Form steps">
-        <span class="badge ${d.step === 1 ? 'badge-submitted' : 'badge-closed'}">1. Issue Details</span>
-        <span class="badge ${d.step === 2 ? 'badge-submitted' : 'badge-closed'}">2. Location</span>
-        <span class="badge ${d.step === 3 ? 'badge-submitted' : 'badge-closed'}">3. Review &amp; Submit</span>
+        <span class="badge ${d.step === 1 ? 'badge-submitted' : 'badge-closed'}">${esc(tr('step_1'))}</span>
+        <span class="badge ${d.step === 2 ? 'badge-submitted' : 'badge-closed'}">${esc(tr('step_2'))}</span>
+        <span class="badge ${d.step === 3 ? 'badge-submitted' : 'badge-closed'}">${esc(tr('step_3'))}</span>
       </div>
     `;
 
     if (d.step === 1) {
       app.innerHTML = `
         <section class="card">
-          <div class="card-header"><h1>Report a Civic Issue</h1></div>
+          <div class="card-header"><h1>${esc(tr('form_title'))}</h1></div>
           <div class="card-body">
             ${stepIndicator}
             <form id="step1-form" novalidate>
               <div class="grid grid-2">
                 <div class="form-group">
-                  <label class="form-label" for="report-category">Category</label>
+                  <label class="form-label" for="report-category">${esc(tr('lbl_category'))}</label>
                   <select id="report-category" class="form-select" required>
-                    ${Object.entries(CATEGORY_LABELS).map(([val, lbl]) => `
-                      <option value="${esc(val)}" ${d.category === val ? 'selected' : ''}>${esc(lbl)}</option>
+                    ${Object.keys(CATEGORY_LABELS).map(val => `
+                      <option value="${esc(val)}" ${d.category === val ? 'selected' : ''}>${esc(catLabel(val))}</option>
                     `).join('')}
                   </select>
                 </div>
 
                 <div class="form-group">
-                  <label class="form-label" for="report-severity">Severity</label>
+                  <label class="form-label" for="report-severity">${esc(tr('lbl_severity'))}</label>
                   <select id="report-severity" class="form-select" required>
-                    <option value="low" ${d.severity === 'low' ? 'selected' : ''}>Low — Minor or cosmetic issue</option>
-                    <option value="medium" ${d.severity === 'medium' ? 'selected' : ''}>Medium — Needs standard attention</option>
-                    <option value="high" ${d.severity === 'high' ? 'selected' : ''}>High — Urgent / safety hazard</option>
+                    <option value="low" ${d.severity === 'low' ? 'selected' : ''}>${esc(tr('sev_low'))}</option>
+                    <option value="medium" ${d.severity === 'medium' ? 'selected' : ''}>${esc(tr('sev_medium'))}</option>
+                    <option value="high" ${d.severity === 'high' ? 'selected' : ''}>${esc(tr('sev_high'))}</option>
                   </select>
                 </div>
               </div>
 
               <div class="form-group">
-                <label class="form-label" for="report-description">Description</label>
+                <label class="form-label" for="report-description">${esc(tr('lbl_description'))}</label>
                 <textarea id="report-description" class="form-textarea" rows="4" required minlength="20"
-                          placeholder="Describe the location, severity, and details of the issue (minimum 20 characters)...">${esc(d.description)}</textarea>
-                <p class="form-help">Minimum 20 characters. Include safety hazards if applicable.</p>
-                <p class="form-error" id="step1-desc-error" hidden></p>
+                          placeholder="${esc(tr('desc_placeholder'))}">${esc(d.description)}</textarea>
+                <p class="form-help">${esc(tr('desc_help'))}</p>
+                <p class="form-error" id="step1-desc-error" role="alert" hidden></p>
               </div>
 
               <div class="form-group">
-                <label class="form-label">Photo Evidence <span class="text-xs text-muted">(optional)</span></label>
+                <label class="form-label">${esc(tr('lbl_photo'))} <span class="text-xs text-muted">${esc(tr('lbl_optional'))}</span></label>
                 <div id="image-upload-container">
                   ${C.ImageUpload ? C.ImageUpload(d.previewSrc) : ''}
                 </div>
-                <p class="form-error" id="step1-img-error" hidden></p>
+                <p class="form-error" id="step1-img-error" role="alert" hidden></p>
               </div>
 
               <div class="form-group form-check">
                 <input type="checkbox" id="report-anonymous" ${d.isAnonymous ? 'checked' : ''}>
-                <label for="report-anonymous">Hide my name from the public community feed</label>
+                <label for="report-anonymous">${esc(tr('lbl_anon'))}</label>
               </div>
-              <p class="form-help mb-lg">
-                Your identity will be hidden from the community feed (shown as "Community Member"),
-                but remains visible to authorized municipal staff for verification.
-              </p>
+              <p class="form-help mb-lg">${esc(tr('anon_help'))}</p>
 
               <div class="flex justify-between">
-                <a href="#/home" class="btn btn-ghost">Cancel</a>
-                <button type="submit" class="btn btn-primary">Next: Location &rarr;</button>
+                <a href="#/home" class="btn btn-ghost">${esc(tr('btn_cancel'))}</a>
+                <button type="submit" class="btn btn-primary">${esc(tr('btn_next_loc'))}</button>
               </div>
             </form>
           </div>
@@ -1346,18 +1447,20 @@
       const dupEl = document.getElementById('duplicates-preview');
       if (dupEl) {
         dupEl.innerHTML = `
-          <div class="card-header"><strong>Potential Nearby Duplicates (${esc(dupData.label || 'Rules-based demo analysis')})</strong></div>
+          <div class="card-header"><strong>${esc(tr('dup_header'))} (${esc(dupData.label || 'Rules-based demo analysis')})</strong></div>
           <div class="card-body">
             ${dups.length === 0
-              ? '<p class="text-muted">No matching nearby reports found.</p>'
-              : dups.map(dup => `
+              ? `<p class="text-muted">${esc(tr('dup_none'))}</p>`
+              : `<p class="text-sm text-muted mb-sm">${esc(tr('dup_support_hint'))}</p>` + dups.map(dup => `
                 <div class="duplicate-item">
                   <div>
                     <strong>${esc(dup.reportNumber)}</strong> · ${esc(catLabel(dup.category))} · ${statusBadge(dup.status)}
                     <p class="text-sm">${esc(dup.description)}</p>
-                    <span class="text-xs text-muted">${dup.distance}m away · Similarity ${Math.round((dup.score || 0) * 100)}%</span>
+                    <span class="text-xs text-muted">
+                      ${dup.address ? `📍 ${esc(dup.address)} · ` : ''}${dup.distance}m away · 🤝 ${dup.supportCount || 0} supporting · Similarity ${Math.round((dup.score || 0) * 100)}%
+                    </span>
                   </div>
-                  <a href="#/report/${esc(dup.reportId)}" target="_blank" class="btn btn-ghost btn-sm">View</a>
+                  <a href="#/report/${esc(dup.reportId)}" class="btn btn-secondary btn-sm">${esc(tr('btn_view_support'))}</a>
                 </div>
               `).join('')
             }
@@ -1511,6 +1614,25 @@
           ` : ''}
 
           <p class="mb-md">${esc(r.description)}</p>
+          ${window.CivIQI18n && window.CivIQI18n.getLang() !== 'en' ? `<p class="text-xs text-muted mb-sm">${esc(tr('original_text_note'))}</p>` : ''}
+
+          <div class="support-box mb-md">
+            <div class="flex justify-between items-center flex-wrap gap-sm">
+              <div>
+                <strong>🤝 <span id="detail-support-count">${r.supportCount || 0}</span> citizen(s) supporting this report</strong>
+                <p class="text-xs text-muted">${window.CivIQI18n ? esc(window.CivIQI18n.statusExplain(r.status)) : ''}</p>
+              </div>
+              <div>
+                ${['resolved', 'closed'].includes(r.status) ? `
+                  <span class="text-xs text-muted">${esc(tr('support_closed_msg'))}</span>
+                ` : `
+                  <button type="button" class="btn ${r.userSupported ? 'btn-secondary' : 'btn-primary'} btn-sm" id="detail-support-btn" aria-pressed="${r.userSupported ? 'true' : 'false'}">
+                    ${r.userSupported ? esc(tr('btn_supported')) : esc(tr('btn_support'))}
+                  </button>
+                `}
+              </div>
+            </div>
+          </div>
 
           <div class="grid grid-2 mb-md">
             <div>
@@ -1533,7 +1655,7 @@
         </div>
       </article>
 
-      <div class="grid grid-2">
+      <div class="grid grid-2 mb-lg">
         <section class="card">
           <div class="card-header"><h2>Status History</h2></div>
           <div class="card-body">
@@ -1558,6 +1680,81 @@
           </div>
         </section>
       </div>
+
+      ${(() => {
+        const v = r.verification || {};
+        if (v.state === 'none' && (!v.entries || v.entries.length === 0)) return '';
+        const stateLabel = v.state === 'awaiting' ? tr('verif_awaiting')
+          : v.state === 'verified_resolved' ? tr('verif_verified')
+          : v.state === 'needs_followup' ? tr('verif_followup')
+          : v.state === 'closed_confirmed' ? tr('verif_closed')
+          : v.state;
+        return `
+          <section class="card verification-panel" id="verification-section">
+            <div class="card-header flex justify-between items-center flex-wrap gap-sm">
+              <h2>${esc(tr('verif_heading'))}</h2>
+              <span class="badge ${v.state === 'verified_resolved' ? 'badge-resolved' : v.state === 'needs_followup' ? 'badge-critical' : 'badge-warning'}">${esc(stateLabel)}</span>
+            </div>
+            <div class="card-body">
+              <div class="flex gap-lg flex-wrap mb-md">
+                <span><strong>Fixed confirmations:</strong> ${v.fixedCount || 0} / ${v.fixedThreshold || 2}</span>
+                <span><strong>Still present reports:</strong> ${v.stillPresentCount || 0} / ${v.reopenThreshold || 2}</span>
+                ${v.deadline ? `<span class="text-sm text-muted"><strong>Verification window ends:</strong> ${formatDate(v.deadline)}</span>` : ''}
+              </div>
+
+              ${v.userVote ? `
+                <p class="text-sm mb-md"><strong>Your verification vote:</strong> ${v.userVote === 'fixed' ? '✅ Fixed' : '⚠️ Still present'}</p>
+              ` : v.canVerify ? `
+                <form id="citizen-verify-form" class="card mb-md" style="padding: var(--space-md); background: var(--gray-50);">
+                  <div class="form-group">
+                    <label class="form-label">Did municipal staff resolve this issue?</label>
+                    <div class="flex gap-sm flex-wrap">
+                      <label class="btn btn-secondary btn-sm">
+                        <input type="radio" name="verif-vote" value="fixed" checked> ${esc(tr('verif_fixed_btn'))}
+                      </label>
+                      <label class="btn btn-secondary btn-sm">
+                        <input type="radio" name="verif-vote" value="still_present"> ${esc(tr('verif_still_btn'))}
+                      </label>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="verif-comment">Optional comment</label>
+                    <textarea id="verif-comment" class="form-textarea" rows="2" placeholder="Add details if the issue is fixed or still present..."></textarea>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="verif-photo">Optional photo (JPEG/PNG/WebP, max 5MB)</label>
+                    <input type="file" id="verif-photo" class="form-input" accept="image/jpeg,image/png,image/webp">
+                  </div>
+                  <button type="submit" class="btn btn-primary btn-sm" id="verif-submit-btn">${esc(tr('verif_submit'))}</button>
+                </form>
+              ` : `
+                <p class="text-xs text-muted mb-md">
+                  ${!state.user
+                    ? 'Sign in as an independent citizen to submit verification feedback.'
+                    : r.isOwner
+                      ? 'Report owners cannot vote on their own community verification.'
+                      : state.user.role !== 'citizen'
+                        ? 'Staff and administrators cannot submit citizen verification votes.'
+                        : 'Verification voting is currently closed for this report.'}
+                </p>
+              `}
+
+              ${(v.entries || []).length > 0 ? `
+                <h3 class="mb-sm">Community Verification Feedback (${v.entries.length})</h3>
+                ${v.entries.map(en => `
+                  <div class="detail-row">
+                    <div>
+                      <strong>${en.vote === 'fixed' ? '✅ Fixed' : '⚠️ Still present'}</strong> · <span class="text-xs text-muted">${esc(en.author)} · ${formatDate(en.createdAt)}</span>
+                      ${en.comment ? `<p class="text-sm mt-xs">${esc(en.comment)}</p>` : ''}
+                      ${en.imagePath ? `<img src="${esc(en.imagePath)}" alt="Verification evidence" class="image-preview mt-xs">` : ''}
+                    </div>
+                  </div>
+                `).join('')}
+              ` : '<p class="text-sm text-muted">No community verification votes recorded yet.</p>'}
+            </div>
+          </section>
+        `;
+      })()}
     `;
 
     if (r.latitude != null && r.longitude != null) {
@@ -1581,6 +1778,46 @@
         if (btn) btn.classList.toggle('upvoted', !!res.upvoted);
       } catch (err) {
         showToast(err.message, 'error');
+      }
+    });
+
+    document.getElementById('detail-support-btn')?.addEventListener('click', async () => {
+      if (!state.user) {
+        showToast('Please sign in as a citizen to support this report.', 'info');
+        return;
+      }
+      try {
+        const method = r.userSupported ? 'DELETE' : 'POST';
+        const res = await fetchAPI(`/api/reports/${encodeURIComponent(reportId)}/support`, { method });
+        showToast(res.supported ? 'You are now supporting this report.' : 'Support removed.', 'success');
+        window.CivIQI18n?.announce(res.supported ? 'Report supported' : 'Support removed');
+        renderReportDetailPage(app, reportId);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+
+    document.getElementById('citizen-verify-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const submitBtn = document.getElementById('verif-submit-btn');
+      submitBtn.disabled = true;
+      try {
+        const vote = document.querySelector('input[name="verif-vote"]:checked')?.value || 'fixed';
+        const comment = document.getElementById('verif-comment')?.value.trim() || '';
+        const photoFile = document.getElementById('verif-photo')?.files?.[0] || null;
+
+        const fd = new FormData();
+        fd.append('vote', vote);
+        if (comment) fd.append('comment', comment);
+        if (photoFile) fd.append('image', photoFile);
+
+        await fetchAPI(`/api/reports/${encodeURIComponent(reportId)}/verify`, { method: 'POST', body: fd });
+        showToast('Verification vote recorded. Thank you!', 'success');
+        window.CivIQI18n?.announce('Verification vote recorded');
+        renderReportDetailPage(app, reportId);
+      } catch (err) {
+        showToast(err.message, 'error');
+        submitBtn.disabled = false;
       }
     });
   }
@@ -1736,6 +1973,8 @@
           department: r.departmentName,
           createdAt: r.createdAt,
           upvoteCount: r.upvoteCount,
+          supportCount: r.supportCount || 0,
+          verificationState: r.verificationState || 'none',
           isAnonymous: r.isAnonymous,
           reporterName: r.reporterName,
           hasUpvoted: r.userUpvoted
@@ -2278,12 +2517,33 @@
         </div>
         <div class="card-body">
           <p class="mb-md">${esc(r.description)}</p>
+          ${window.CivIQI18n && window.CivIQI18n.getLang() !== 'en' ? `<p class="text-xs text-muted mb-sm">${esc(tr('original_text_note'))}</p>` : ''}
+
+          <div class="support-box mb-md">
+            <div class="flex justify-between items-center flex-wrap gap-sm">
+              <div>
+                <strong>🤝 <span id="detail-support-count">${r.supportCount || 0}</span> citizen(s) supporting this report</strong>
+                <p class="text-xs text-muted">${window.CivIQI18n ? esc(window.CivIQI18n.statusExplain(r.status)) : ''}</p>
+              </div>
+              <div>
+                ${['resolved', 'closed'].includes(r.status) ? `
+                  <span class="text-xs text-muted">${esc(tr('support_closed_msg'))}</span>
+                ` : `
+                  <button type="button" class="btn ${r.userSupported ? 'btn-secondary' : 'btn-primary'} btn-sm" id="detail-support-btn" aria-pressed="${r.userSupported ? 'true' : 'false'}">
+                    ${r.userSupported ? esc(tr('btn_supported')) : esc(tr('btn_support'))}
+                  </button>
+                `}
+              </div>
+            </div>
+          </div>
           <div class="grid grid-2 mb-md">
             <div>
               <div class="detail-row"><span class="detail-label">Department</span><span class="detail-value">${esc(r.departmentName || 'General Services')}</span></div>
               <div class="detail-row"><span class="detail-label">Assigned To</span><span class="detail-value">${esc(r.assignedToName || 'Unassigned')}</span></div>
               <div class="detail-row"><span class="detail-label">Address</span><span class="detail-value">${esc(r.address || '—')}</span></div>
               <div class="detail-row"><span class="detail-label">Classification Source</span><span class="detail-value">${esc(r.classificationSource || 'rules_engine')}</span></div>
+              <div class="detail-row"><span class="detail-label">Citizen Support &amp; Upvotes</span><span class="detail-value">🤝 ${r.supportCount || 0} supporting · ▲ ${r.upvoteCount || 0} upvotes</span></div>
+              <div class="detail-row"><span class="detail-label">Verification State</span><span class="detail-value">${esc(r.verificationState || 'none')}</span></div>
               <div class="detail-row"><span class="detail-label">SLA Deadline</span><span class="detail-value">${formatDate(r.slaDeadline)}</span></div>
             </div>
             <div>
@@ -2363,6 +2623,37 @@
           </div>
         </section>
       </div>
+
+      <!-- Community Verification Review -->
+      <section class="card verification-panel mb-lg">
+        <div class="card-header flex justify-between items-center flex-wrap gap-sm">
+          <h2>Community Resolution Verification (${esc(r.verificationState || 'none')})</h2>
+          ${r.verificationDeadline ? `<span class="text-xs text-muted">Deadline: ${formatDate(r.verificationDeadline)}</span>` : ''}
+        </div>
+        <div class="card-body">
+          ${(r.verifications || []).length === 0
+            ? '<p class="text-sm text-muted mb-md">No citizen verification feedback submitted yet.</p>'
+            : `<div class="mb-md">${r.verifications.map(v => `
+              <div class="detail-row">
+                <div>
+                  <strong>${v.vote === 'fixed' ? '✅ Fixed' : '⚠️ Still present'}</strong> · <span class="text-xs text-muted">${esc(v.author || 'Citizen')} · ${formatDate(v.createdAt)}</span>
+                  ${v.comment ? `<p class="text-sm mt-xs">${esc(v.comment)}</p>` : ''}
+                  ${v.imagePath ? `<img src="${esc(v.imagePath)}" alt="Citizen verification photo" class="image-preview mt-xs">` : ''}
+                </div>
+              </div>
+            `).join('')}</div>`
+          }
+          <div class="form-group">
+            <label class="form-label" for="staff-verif-explanation">Staff Review Explanation (required when closing with explanation)</label>
+            <textarea id="staff-verif-explanation" class="form-textarea" rows="2" placeholder="Explain verification outcome or follow-up action..."></textarea>
+          </div>
+          <div class="flex gap-sm flex-wrap">
+            <button type="button" class="btn btn-success btn-sm staff-verif-decision" data-decision="confirm_resolved">✅ Confirm Resolved</button>
+            <button type="button" class="btn btn-secondary btn-sm staff-verif-decision" data-decision="reopen">🔄 Reopen for Follow-up</button>
+            <button type="button" class="btn btn-danger btn-sm staff-verif-decision" data-decision="close_with_explanation">🔒 Close with Explanation</button>
+          </div>
+        </div>
+      </section>
 
       <!-- Duplicate Suggestions -->
       <section class="card duplicate-panel mb-lg">
@@ -2505,6 +2796,22 @@
       } catch (err) {
         showToast(err.message, 'error');
       }
+    });
+
+    app.querySelectorAll('.staff-verif-decision').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          const explanation = document.getElementById('staff-verif-explanation')?.value.trim() || '';
+          await fetchAPI(`/api/staff/reports/${encodeURIComponent(reportId)}/verification-decision`, {
+            method: 'POST',
+            body: { decision: btn.dataset.decision, explanation }
+          });
+          showToast('Verification decision recorded', 'success');
+          renderStaffReportDetailPage(app, reportId);
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
     });
 
     app.querySelectorAll('.dup-decision-btn').forEach(btn => {
@@ -3028,6 +3335,31 @@
   window.addEventListener('hashchange', route);
 
   document.addEventListener('DOMContentLoaded', async () => {
+    const langSel = document.getElementById('lang-select');
+    const simpleToggle = document.getElementById('simple-lang-toggle');
+    const simpleLbl = document.getElementById('simple-lang-label');
+
+    if (window.CivIQI18n) {
+      if (langSel) {
+        langSel.value = window.CivIQI18n.getLang();
+        langSel.addEventListener('change', (e) => {
+          window.CivIQI18n.setLang(e.target.value);
+          if (simpleLbl) simpleLbl.textContent = window.CivIQI18n.t('simple_label');
+          renderNavigation();
+          route();
+        });
+      }
+      if (simpleToggle) {
+        simpleToggle.checked = window.CivIQI18n.isSimple();
+        if (simpleLbl) simpleLbl.textContent = window.CivIQI18n.t('simple_label');
+        simpleToggle.addEventListener('change', (e) => {
+          window.CivIQI18n.setSimple(e.target.checked);
+          renderNavigation();
+          route();
+        });
+      }
+    }
+
     await initAuth();
     if (!window.location.hash) {
       window.location.hash = '#/home';

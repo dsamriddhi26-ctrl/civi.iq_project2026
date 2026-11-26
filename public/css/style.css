@@ -1,75 +1,78 @@
 /* ==========================================================================
-   Civ.IQ Design System — Calm, Trustworthy, Civic
+   Civ.IQ Design System — Dream City & Civic Sense Theme
    ========================================================================== */
 
 /* ---------- CSS Custom Properties ---------- */
 :root {
-  /* Primary palette */
-  --color-primary: #1a5276;
-  --color-primary-light: #2471a3;
-  --color-primary-dark: #154360;
-  --color-secondary: #2e86c1;
-  --color-secondary-light: #5dade2;
+  /* Primary palette (Dream City Forest Emerald & Sunlit Amber) */
+  --color-primary: #14533c;
+  --color-primary-light: #1e7354;
+  --color-primary-dark: #0d3b2a;
+  --color-secondary: #1e7e58;
+  --color-secondary-light: #35a074;
+  --color-accent: #f4b426;
+  --color-accent-dark: #c98a09;
+  --color-accent-bg: #fff8e1;
+  --color-mint-bg: #eaf5ef;
 
   /* Semantic colors */
-  --color-success: #27ae60;
+  --color-success: #1e8449;
   --color-success-light: #d5f5e3;
-  --color-warning: #f39c12;
+  --color-warning: #e69d17;
   --color-warning-light: #fef9e7;
   --color-danger: #c0392b;
   --color-danger-light: #fadbd8;
-  --color-info: #2e86c1;
-  --color-info-light: #d6eaf8;
+  --color-info: #1e7e58;
+  --color-info-light: #e3f4ec;
 
   /* Priority colors */
   --priority-critical: #c0392b;
   --priority-critical-bg: #fadbd8;
-  --priority-medium: #f39c12;
-  --priority-medium-bg: #fef9e7;
-  --priority-low: #27ae60;
+  --priority-medium: #d68910;
+  --priority-medium-bg: #fef5e7;
+  --priority-low: #1e8449;
   --priority-low-bg: #d5f5e3;
 
   /* Status colors */
-  --status-submitted: #2e86c1;
-  --status-submitted-bg: #d6eaf8;
-  --status-under-review: #8e44ad;
-  --status-under-review-bg: #ebdef0;
-  --status-assigned: #e67e22;
+  --status-submitted: #1e7e58;
+  --status-submitted-bg: #e3f4ec;
+  --status-under-review: #7d3c98;
+  --status-under-review-bg: #f4ecf7;
+  --status-assigned: #d35400;
   --status-assigned-bg: #fdebd0;
-  --status-in-progress: #f39c12;
+  --status-in-progress: #d68910;
   --status-in-progress-bg: #fef9e7;
-  --status-resolved: #27ae60;
+  --status-resolved: #1e8449;
   --status-resolved-bg: #d5f5e3;
-  --status-closed: #7f8c8d;
+  --status-closed: #616a6b;
   --status-closed-bg: #eaecee;
   --status-reopened: #c0392b;
   --status-reopened-bg: #fadbd8;
 
-  /* Neutral grays */
-  --gray-50: #fafafa;
-  --gray-100: #f5f5f5;
-  --gray-200: #eeeeee;
-  --gray-300: #e0e0e0;
-  --gray-400: #bdbdbd;
-  --gray-500: #9e9e9e;
-  --gray-600: #757575;
-  --gray-700: #616161;
-  --gray-800: #424242;
-  --gray-900: #212121;
+  /* Neutral grays (warm sage-tinted) */
+  --gray-50: #f5f8f5;
+  --gray-100: #eef3ef;
+  --gray-200: #e2ebe5;
+  --gray-300: #d1ddd6;
+  --gray-400: #9eb0a6;
+  --gray-500: #6c7f74;
+  --gray-600: #516359;
+  --gray-700: #3d4d44;
+  --gray-800: #28352e;
+  --gray-900: #16221c;
 
   /* Typography */
-  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
-    Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", Arial,
-    sans-serif;
+  --font-family: "Plus Jakarta Sans", "Segoe UI", -apple-system, BlinkMacSystemFont,
+    Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-size-base: 16px;
   --font-size-sm: 0.875rem;
   --font-size-xs: 0.75rem;
   --font-size-lg: 1.125rem;
   --font-size-xl: 1.25rem;
   --font-size-2xl: 1.5rem;
-  --font-size-3xl: 2rem;
+  --font-size-3xl: 2.125rem;
   --line-height: 1.6;
-  --line-height-tight: 1.3;
+  --line-height-tight: 1.25;
 
   /* Spacing */
   --space-xs: 0.25rem;
@@ -80,23 +83,23 @@
   --space-2xl: 3rem;
 
   /* Borders & Radii */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
   --radius-full: 9999px;
   --border-color: var(--gray-300);
 
   /* Shadows */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
-  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.12);
+  --shadow-sm: 0 2px 6px rgba(20, 83, 60, 0.06);
+  --shadow-md: 0 6px 16px rgba(20, 83, 60, 0.09);
+  --shadow-lg: 0 14px 32px rgba(20, 83, 60, 0.14);
 
   /* Transitions */
   --transition-fast: 150ms ease;
   --transition-normal: 250ms ease;
 
   /* Layout */
-  --header-height: 60px;
+  --header-height: 62px;
   --demo-bar-height: 44px;
   --sidebar-width: 280px;
   --max-content-width: 1200px;
@@ -226,7 +229,7 @@ textarea:focus-visible {
 
 /* ---------- Header ---------- */
 .site-header {
-  background: var(--color-primary);
+  background: linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 60%, var(--color-primary-light) 100%);
   color: #fff;
   height: var(--header-height);
   position: sticky;
@@ -2350,9 +2353,377 @@ textarea:focus-visible {
 }
 
 /* Auth first screen (Role selection + Email/Phone Login/Signup) */
-.auth-card {
-  max-width: 680px;
+.auth-split {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: var(--space-lg);
+  align-items: stretch;
+  max-width: 1060px;
   margin: var(--space-lg) auto;
+}
+
+@media (max-width: 860px) {
+  .auth-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.auth-poster {
+  background: linear-gradient(160deg, #f9d45c 0%, #f4b426 52%, #14533c 52.3%, #14533c 100%);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+  color: #16221c;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  position: relative;
+}
+
+.auth-poster-top {
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.poster-kicker {
+  display: inline-block;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  margin-bottom: var(--space-sm);
+}
+
+.auth-poster h2 {
+  font-size: 1.75rem;
+  line-height: 1.15;
+  font-weight: 800;
+  color: var(--color-primary-dark);
+  margin-bottom: var(--space-xs);
+}
+
+.poster-tagline {
+  display: inline-block;
+  border: 2px solid var(--color-primary-dark);
+  border-radius: var(--radius-full);
+  padding: 3px 12px;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--color-primary-dark);
+  margin-top: var(--space-xs);
+}
+
+.auth-poster-bottom {
+  color: #fff;
+  padding-top: var(--space-md);
+}
+
+.civic-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+}
+
+.civic-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #fff;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.hero-dream-city {
+  background: linear-gradient(135deg, #eaf5ef 0%, #f9fbf8 55%, #fff8e1 100%);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+  display: grid;
+  grid-template-columns: 1.2fr 0.9fr;
+  gap: var(--space-xl);
+  align-items: center;
+  box-shadow: var(--shadow-md);
+}
+
+@media (max-width: 820px) {
+  .hero-dream-city {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+}
+
+.hero-dream-city h1 {
+  font-size: clamp(1.75rem, 3vw, 2.35rem);
+  line-height: 1.18;
+  color: var(--color-primary-dark);
+  margin-bottom: var(--space-md);
+}
+
+.hero-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-lg);
+}
+
+.hero-pill-tag {
+  background: var(--color-primary);
+  color: #fff;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+}
+
+.dream-city-svg {
+  width: 100%;
+  max-width: 380px;
+  margin: 0 auto;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.auth-card {
+  margin: 0;
+  height: 100%;
+}
+
+/* ---------- Civic Spotter Game ---------- */
+.game-layout {
+  display: grid;
+  grid-template-columns: 1fr 310px;
+  gap: var(--space-md);
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .game-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.game-stage-card {
+  overflow: hidden;
+}
+
+.game-viewport {
+  position: relative;
+  width: 100%;
+  height: 490px;
+  overflow: hidden;
+  background: #dfeee7;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.game-viewport.dragging {
+  cursor: grabbing;
+}
+
+.game-canvas {
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.game-svg {
+  display: block;
+}
+
+.game-issue-target {
+  cursor: pointer;
+}
+
+.game-drag-hint {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  background: rgba(20, 83, 60, 0.88);
+  color: #fff;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  pointer-events: none;
+}
+
+.game-hud-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.game-timer-val {
+  font-size: var(--font-size-xl);
+  font-weight: 800;
+}
+
+.game-checklist {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.game-check-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--gray-50);
+  font-size: var(--font-size-sm);
+  color: var(--gray-600);
+}
+
+.game-check-item.found {
+  background: var(--color-mint-bg);
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+/* Game SVG Animations */
+.game-anim-cloud {
+  animation: gameCloudDrift 14s ease-in-out infinite alternate;
+}
+
+.game-anim-sway {
+  animation: gameTreeSway 4s ease-in-out infinite alternate;
+}
+
+.game-anim-drop {
+  animation: gameDropFall 1.8s ease-in infinite;
+}
+
+.game-anim-flicker {
+  animation: gameLightFlicker 1.2s steps(2, end) infinite;
+}
+
+.game-anim-smoke {
+  animation: gameSmokeRise 2.2s ease-out infinite;
+}
+
+.game-anim-float {
+  animation: gameFloatBob 1.5s ease-in-out infinite alternate;
+}
+
+.game-anim-shake {
+  animation: gameRumble 0.45s ease-in-out infinite alternate;
+}
+
+.game-hint-pulse {
+  animation: gameHintPulse 0.7s ease-in-out infinite alternate;
+}
+
+.game-pop-feedback {
+  animation: gamePopUp 0.8s ease-out forwards;
+}
+
+@keyframes gameCloudDrift {
+  from { transform: translateX(-25px); }
+  to { transform: translateX(35px); }
+}
+
+@keyframes gameTreeSway {
+  from { transform: rotate(-2deg); }
+  to { transform: rotate(2.5deg); }
+}
+
+@keyframes gameDropFall {
+  0% { transform: translateY(0px); opacity: 1; }
+  75% { transform: translateY(72px); opacity: 1; }
+  100% { transform: translateY(88px); opacity: 0; }
+}
+
+@keyframes gameLightFlicker {
+  0%, 40% { opacity: 1; }
+  50% { opacity: 0.2; }
+  70% { opacity: 0.9; }
+  85% { opacity: 0.15; }
+}
+
+@keyframes gameSmokeRise {
+  0% { transform: translate(0, 0) scale(0.95); opacity: 0.9; }
+  100% { transform: translate(18px, -28px) scale(1.12); opacity: 0.25; }
+}
+
+@keyframes gameFloatBob {
+  from { transform: translateY(0px); }
+  to { transform: translateY(-5px); }
+}
+
+@keyframes gameRumble {
+  from { transform: translateX(-2px); }
+  to { transform: translateX(2px); }
+}
+
+@keyframes gameHintPulse {
+  from { stroke-opacity: 1; transform: scale(1); }
+  to { stroke-opacity: 0.35; }
+}
+
+@keyframes gamePopUp {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-28px); opacity: 0; }
+}
+
+/* ---------- Accessibility & Language Controls ---------- */
+.a11y-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+.a11y-select {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.a11y-select option {
+  color: var(--gray-900);
+  background: #fff;
+}
+
+.a11y-simple-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ---------- Support & Community Verification ---------- */
+.support-box {
+  background: var(--color-mint-bg);
+  border: 1px solid var(--gray-300);
+  border-left: 4px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+}
+
+.verification-panel {
+  border-top: 4px solid var(--color-accent);
 }
 
 .role-selector {

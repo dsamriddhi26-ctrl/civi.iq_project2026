@@ -369,3 +369,100 @@ test('Role-based email/phone signup & login, and user-selected report severity',
     db.close();
   }
 });
+
+test('Community resolution verification eligibility, uniqueness, staff decision, and anti-duplicate support', async () => {
+  const { server, db } = createAppServer(':memory:');
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const priya = db.prepare("SELECT id FROM users WHERE email = 'priya@demo.civiq.local'").get();
+    const rahul = db.prepare("SELECT id FROM users WHERE email = 'rahul@demo.civiq.local'").get();
+    const staff = db.prepare("SELECT id FROM users WHERE role = 'staff' LIMIT 1").get();
+
+    // Sign up a third independent citizen so we can test threshold = 2
+    const signup3 = await request(baseUrl, 'POST', '/api/auth/signup', {
+      body: { role: 'citizen', displayName: 'Citizen Three', contact: 'c3@demo.civiq.local' }
+    });
+    assert.equal(signup3.status, 201);
+    const c3Cookie = signup3.setCookie[0].split(';')[0];
+
+    const loginPriya = await request(baseUrl, 'POST', '/api/auth/demo-login', { body: { userId: priya.id } });
+    const priyaCookie = loginPriya.setCookie[0].split(';')[0];
+    const loginRahul = await request(baseUrl, 'POST', '/api/auth/demo-login', { body: { userId: rahul.id } });
+    const rahulCookie = loginRahul.setCookie[0].split(';')[0];
+    const loginStaff = await request(baseUrl, 'POST', '/api/auth/demo-login', { body: { userId: staff.id } });
+    const staffCookie = loginStaff.setCookie[0].split(';')[0];
+
+    // Seeded resolved report CIV-2026-00007 is owned by Priya and awaiting verification
+    const resolvedRep = db.prepare("SELECT id FROM reports WHERE report_number = 'CIV-2026-00007'").get();
+
+    // 1. Report owner (Priya) cannot vote on her own report's verification (403)
+    const ownerVote = await request(baseUrl, 'POST', `/api/reports/${resolvedRep.id}/verify`, {
+      cookie: priyaCookie,
+      body: { vote: 'fixed' }
+    });
+    assert.equal(ownerVote.status, 403);
+
+    // 2. Staff cannot submit a citizen verification vote (403)
+    const staffVote = await request(baseUrl, 'POST', `/api/reports/${resolvedRep.id}/verify`, {
+      cookie: staffCookie,
+      body: { vote: 'fixed' }
+    });
+    assert.equal(staffVote.status, 403);
+
+    // 3. Independent citizen (Rahul) can submit one verification vote (201)
+    const rahulVote1 = await request(baseUrl, 'POST', `/api/reports/${resolvedRep.id}/verify`, {
+      cookie: rahulCookie,
+      body: { vote: 'fixed', comment: 'Looks clean now!' }
+    });
+    assert.equal(rahulVote1.status, 201);
+    assert.equal(rahulVote1.json.fixedCount, 1);
+
+    // 4. Rahul cannot vote twice (409)
+    const rahulVote2 = await request(baseUrl, 'POST', `/api/reports/${resolvedRep.id}/verify`, {
+      cookie: rahulCookie,
+      body: { vote: 'fixed' }
+    });
+    assert.equal(rahulVote2.status, 409);
+
+    // 5. Second independent citizen meets threshold (2) -> verified_resolved
+    const c3Vote = await request(baseUrl, 'POST', `/api/reports/${resolvedRep.id}/verify`, {
+      cookie: c3Cookie,
+      body: { vote: 'fixed' }
+    });
+    assert.equal(c3Vote.status, 201);
+    assert.equal(c3Vote.json.verificationState, 'verified_resolved');
+
+    // 6. Staff can record an explicit verification decision (e.g. reopen if needed)
+    const staffDecision = await request(baseUrl, 'POST', `/api/staff/reports/${resolvedRep.id}/verification-decision`, {
+      cookie: staffCookie,
+      body: { decision: 'confirm_resolved', explanation: 'Verified by field supervisor.' }
+    });
+    assert.equal(staffDecision.status, 200);
+    assert.equal(staffDecision.json.verificationState, 'verified_resolved');
+
+    // 7. Support existing active report (CIV-2026-00003) once, block duplicate, allow remove
+    const activeRep = db.prepare("SELECT id FROM reports WHERE report_number = 'CIV-2026-00003'").get();
+    const sup1 = await request(baseUrl, 'POST', `/api/reports/${activeRep.id}/support`, { cookie: rahulCookie });
+    assert.equal(sup1.status, 201);
+    assert.equal(sup1.json.supported, true);
+    assert.equal(sup1.json.supportCount, 1);
+
+    const supDup = await request(baseUrl, 'POST', `/api/reports/${activeRep.id}/support`, { cookie: rahulCookie });
+    assert.equal(supDup.status, 409);
+
+    const supDel = await request(baseUrl, 'DELETE', `/api/reports/${activeRep.id}/support`, { cookie: rahulCookie });
+    assert.equal(supDel.status, 200);
+    assert.equal(supDel.json.supported, false);
+    assert.equal(supDel.json.supportCount, 0);
+
+    // 8. Resolved/closed report cannot receive new support (400)
+    const supResolved = await request(baseUrl, 'POST', `/api/reports/${resolvedRep.id}/support`, { cookie: rahulCookie });
+    assert.equal(supResolved.status, 400);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    db.close();
+  }
+});
